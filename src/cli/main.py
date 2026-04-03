@@ -131,11 +131,11 @@ async def run_chat():
         await heartbeat.start()
         console.print(f"\n  ✓ 心跳：每 {hb_cfg.get('interval_minutes', 5)} 分钟自检一次")
 
-    # 启动定时任务
-    from src.core.scheduler import TaskScheduler
-    scheduler = TaskScheduler(agent=agent)
-    await scheduler.start()
-    console.print(f"  ✓ 定时：APScheduler 已启动\n")
+    # 启动定时任务（Cron）
+    from src.core.cron import CronScheduler
+    cron = CronScheduler(agent=agent)
+    await cron.start()
+    console.print(f"  ✓ Cron：APScheduler 已启动\n")
 
     prompt = cfg.get("cli", {}).get("prompt", "🏠 > ")
 
@@ -154,7 +154,7 @@ async def run_chat():
             # 内置命令处理
             if user_input.startswith("/"):
                 handled = await handle_slash_command(
-                    user_input, agent, scheduler, heartbeat, cfg
+                    user_input, agent, cron, heartbeat, cfg
                 )
                 if handled == "quit":
                     break
@@ -172,14 +172,14 @@ async def run_chat():
     finally:
         if heartbeat:
             await heartbeat.stop()
-        await scheduler.stop()
+        await cron.stop()
         console.print("\n[dim]👋 Agent 已退出[/dim]")
 
 
 async def handle_slash_command(
     cmd: str,
     agent,
-    scheduler,
+    cron,
     heartbeat,
     cfg: dict,
 ) -> Optional[str]:
@@ -221,7 +221,7 @@ async def handle_slash_command(
         console.print("[green]✓ 对话历史已清除[/green]")
 
     elif command == "/status":
-        _print_status(agent, scheduler, heartbeat, cfg)
+        _print_status(agent, cron, heartbeat, cfg)
 
     elif command == "/model":
         if len(parts) > 1:
@@ -242,13 +242,13 @@ async def handle_slash_command(
 
     elif command == "/cron":
         if len(parts) < 2:
-            _print_schedule_list(scheduler)
+            _print_cron_list(cron)
         elif parts[1] == "list":
-            _print_schedule_list(scheduler)
+            _print_cron_list(cron)
         elif parts[1] == "add":
-            await _add_schedule_interactive(scheduler)
+            await _add_cron_interactive(cron)
         elif parts[1] == "del" and len(parts) > 2:
-            result = scheduler.remove_task(parts[2])
+            result = cron.remove_task(parts[2])
             console.print(result)
         else:
             console.print("[yellow]用法：/cron [list|add|del <id>][/yellow]")
@@ -272,7 +272,7 @@ async def handle_slash_command(
     return None
 
 
-def _print_status(agent, scheduler, heartbeat, cfg: dict):
+def _print_status(agent, cron, heartbeat, cfg: dict):
     """打印 Agent 状态面板"""
     table = Table(title="Agent 状态", show_header=False, border_style="cyan")
     table.add_column("项目", style="dim")
@@ -285,7 +285,7 @@ def _print_status(agent, scheduler, heartbeat, cfg: dict):
     table.add_row("心跳状态", "✓ 运行中" if heartbeat else "○ 未启用")
     table.add_row("MCP Server", str(len(agent.mcp.list_servers())) + " 个")
     table.add_row("Skills", str(len(agent.skills.list_skills())) + " 个")
-    table.add_row("定时任务", str(len(scheduler.list_tasks())) + " 个")
+    table.add_row("Cron 任务", str(len(cron.list_tasks())) + " 个")
 
     console.print(table)
 
@@ -332,11 +332,11 @@ async def _switch_model(agent, model_name: str, cfg: dict):
     _print_model_list(cfg)
 
 
-def _print_schedule_list(scheduler):
-    """打印定时任务列表"""
-    tasks = scheduler.list_tasks()
+def _print_cron_list(cron):
+    """打印 Cron 任务列表"""
+    tasks = cron.list_tasks()
     if not tasks:
-        console.print("[dim]暂无定时任务，使用 /cron add 添加[/dim]")
+        console.print("[dim]暂无 Cron 任务，使用 /cron add 添加[/dim]")
         return
 
     table = Table(title="定时任务", border_style="cyan")
@@ -354,20 +354,20 @@ def _print_schedule_list(scheduler):
     console.print(table)
 
 
-async def _add_schedule_interactive(scheduler):
-    """引导式添加定时任务"""
-    console.print("[bold]添加定时任务[/bold]（按 Ctrl+C 取消）\n")
+async def _add_cron_interactive(cron):
+    """引导式添加 Cron 任务"""
+    console.print("[bold]添加 Cron 任务[/bold]（按 Ctrl+C 取消）\n")
     try:
         task_id = console.input("任务 ID（英文，如 morning_routine）：").strip()
         name = console.input("任务名称（如 早晨起床模式）：").strip()
-        cron = console.input("Cron 表达式（分 时 日 月 周，如 0 7 * * * 表示每天7点）：").strip()
+        cron_expr = console.input("Cron 表达式（分 时 日 月 周，如 0 7 * * * 表示每天7点）：").strip()
         description = console.input("任务描述（Agent 将执行的操作）：").strip()
 
-        if not all([task_id, name, cron, description]):
+        if not all([task_id, name, cron_expr, description]):
             console.print("[red]所有字段不能为空[/red]")
             return
 
-        result = scheduler.add_task(task_id, name, cron, description)
+        result = cron.add_task(task_id, name, cron_expr, description)
         console.print(result)
     except KeyboardInterrupt:
         console.print("\n[dim]已取消[/dim]")
