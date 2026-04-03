@@ -1,0 +1,6 @@
+- created_at: '2026-04-03T14:14:41.745901'
+  cron: 0 7 * * *
+  description: 打开灯并播报天气
+  enabled: true
+  id: morning_routine
+  name: 晨间模式

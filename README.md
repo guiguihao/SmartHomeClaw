@@ -50,7 +50,7 @@ python main.py
 在 `config/agent.yaml` 中配置，启动时选择：
 
 - **OpenAI** GPT-4o / GPT-4o-mini
-- **DeepSeek** deepseek-chat / deepseek-reasoner（推荐，性价比高）
+- **DeepSeek** deepseek-v3（推荐，性价比高）
 - **Anthropic** Claude Sonnet
 - **Ollama** 本地模型（qwen2.5、llama3等）
 
