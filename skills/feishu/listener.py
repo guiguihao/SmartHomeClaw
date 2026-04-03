@@ -23,6 +23,21 @@ def run_process_listener(app_id: str, app_secret: str, msg_queue: multiprocessin
         pass
         
     try:
+        # 终极修复：很多时候系统的自签名证书(代理/安全路由)拦截导致 websockets 证书不过。
+        # 我们 Monkey Patch websockets，强行塞入不验证的 ssl 上下文。
+        import websockets
+        _original_connect = websockets.connect
+        
+        def _unverified_connect(*args, **kwargs):
+            if "ssl" not in kwargs:
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                kwargs["ssl"] = ctx
+            return _original_connect(*args, **kwargs)
+            
+        websockets.connect = _unverified_connect
+
         # Import inside the process to ensure fresh state / 
         # 为了保证状态全新，在子进程内部才进行核心包和监听器的组装
         import os
