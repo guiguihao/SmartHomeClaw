@@ -1,4 +1,5 @@
 """
+Skill Loader - Automatically scans and loads all Skill plugins in the skills/ directory / 
 Skill 加载器 - 自动扫描并加载 skills/ 目录下的所有 Skill 插件
 """
 from __future__ import annotations
@@ -16,14 +17,16 @@ logger = logging.getLogger(__name__)
 
 class SkillLoader:
     """
+    Automatically scans skills/ directory and loads all Skill plugins. / 
     自动扫描 skills/ 目录，加载所有 Skill 插件。
+    Each Skill is a subdirectory containing a skill.py file (implementing BaseSkill). / 
     每个 Skill 是一个子目录，包含 skill.py 文件（实现 BaseSkill 的类）。
 
-    目录结构示例：
+    Directory Structure Example / 目录结构示例：
         skills/
         └── smarthome/
-            ├── SKILL.md    # 文档说明
-            └── skill.py    # 实现 SmartHomeSkill(BaseSkill)
+            ├── SKILL.md    # Documentation / 文档说明
+            └── skill.py    # Implements SmartHomeSkill(BaseSkill) / 实现类
     """
 
     def __init__(self, skills_dir: str = "skills"):
@@ -32,10 +35,11 @@ class SkillLoader:
 
     def load_all(self) -> dict[str, BaseSkill]:
         """
+        Scan and load all Skills, returns dictionary of loaded Skills. / 
         扫描并加载所有 Skill，返回已加载的 Skill 字典。
         """
         if not self.skills_dir.exists():
-            logger.info(f"[Skill] skills/ 目录不存在，跳过加载")
+            logger.info(f"[Skill] skills/ directory not found, skipping. / 目录不存在，跳过加载")
             return {}
 
         for skill_dir in self.skills_dir.iterdir():
@@ -50,16 +54,17 @@ class SkillLoader:
                 if skill_instance:
                     self._skills[skill_instance.name] = skill_instance
                     logger.info(
-                        f"[Skill] 已加载：{skill_instance.name} "
-                        f"({len(skill_instance.get_tools())} 个工具)"
+                        f"[Skill] Loaded: {skill_instance.name} / 已加载 "
+                        f"({len(skill_instance.get_tools())} tools / 个工具)"
                     )
             except Exception as e:
-                logger.error(f"[Skill] 加载 {skill_dir.name} 失败: {e}")
+                logger.error(f"[Skill] Failed to load {skill_dir.name}: {e} / 加载失败")
 
         return self._skills
 
     def _load_skill_from_file(self, skill_file: Path) -> BaseSkill | None:
         """
+        Dynamically import skill.py, find and instantiate subclass of BaseSkill. / 
         动态导入 skill.py，找到并实例化 BaseSkill 的子类。
         """
         module_name = f"_skill_{skill_file.parent.name}"
@@ -71,7 +76,7 @@ class SkillLoader:
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
 
-        # 找到继承了 BaseSkill 的类并实例化
+        # Find classes inheriting from BaseSkill and instantiate / 找到继承了 BaseSkill 的类并实例化
         for attr_name in dir(module):
             attr = getattr(module, attr_name)
             if (
@@ -81,7 +86,7 @@ class SkillLoader:
             ):
                 return attr()
 
-        logger.warning(f"[Skill] {skill_file} 中未找到 BaseSkill 子类")
+        logger.warning(f"[Skill] BaseSkill subclass not found in {skill_file} / 未找到子类")
         return None
 
     def get_all_skills(self) -> dict[str, BaseSkill]:
@@ -89,13 +94,14 @@ class SkillLoader:
 
     def get_all_tools_openai_format(self) -> list[dict]:
         """
+        Get all tools provided by Skills (OpenAI function format). / 
         获取所有 Skill 提供的工具（OpenAI function calling 格式）。
-        工具名格式：skill_{skill_name}_{tool_name}
+        Tool name format: skill_{skill_name}_{tool_name}
         """
         tools = []
         for skill in self._skills.values():
             for tool in skill.get_tools():
-                # 在工具名前加上 skill_{name}_ 前缀，避免命名冲突
+                # Prefix tool names to avoid naming conflicts / 加上前缀避免命名冲突
                 tool_copy = dict(tool)
                 if "function" in tool_copy:
                     fn = dict(tool_copy["function"])
@@ -106,28 +112,29 @@ class SkillLoader:
 
     async def handle_tool_call(self, full_tool_name: str, arguments: dict) -> str:
         """
+        Route tool call to corresponding Skill based on full name. / 
         通过完整工具名路由到对应 Skill 处理。
 
         Args:
-            full_tool_name: 如 skill_smarthome_control_device
-            arguments: 工具参数
+            full_tool_name: e.g., skill_smarthome_control_device
+            arguments: Tool arguments / 工具参数
 
         Returns:
-            执行结果字符串
+            Execution result string / 执行结果字符串
         """
         for skill in self._skills.values():
             if skill.is_my_tool(full_tool_name):
                 raw_name = skill.strip_prefix(full_tool_name)
                 return await skill.handle_tool_call(raw_name, arguments)
 
-        return f"❌ 未找到处理工具 '{full_tool_name}' 的 Skill"
+        return f"❌ Skill handling '{full_tool_name}' not found / 未找到对应的 Skill"
 
     def is_skill_tool(self, tool_name: str) -> bool:
-        """判断工具名是否属于 Skill 工具"""
+        """Check if a tool name belongs to a Skill / 判断工具名是否属于 Skill 工具"""
         return tool_name.startswith("skill_")
 
     def list_skills(self) -> list[dict]:
-        """列出所有已加载的 Skill 及其工具"""
+        """List all loaded Skills and their tools / 列出所有已加载的 Skill 及其工具"""
         return [
             {
                 "name": skill.name,

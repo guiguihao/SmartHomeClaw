@@ -1,5 +1,6 @@
 """
-定时任务引擎（Cron）- 基于 APScheduler 的 cron 风格定时系统
+Cron Engine - APScheduler-based cron timing system / 定时任务引擎（Cron）- 基于 APScheduler 的 cron 风格定时系统
+Supports dynamic add/del/list tasks, task status persisted to config/crons.yaml / 
 支持动态添加/删除/列出任务，任务状态持久化到 config/crons.yaml
 """
 from __future__ import annotations
@@ -24,18 +25,19 @@ CRONS_FILE = Path("config/crons.yaml")
 
 @dataclass
 class CronTask:
-    """定时任务数据模型"""
-    id: str                    # 唯一 ID，如 morning_routine
-    name: str                  # 任务名称，如 早晨起床模式
-    cron: str                  # cron 表达式，如 0 7 * * *（每天7点）
-    description: str           # 任务描述，Agent 会执行此描述的指令
-    enabled: bool = True       # 是否启用
+    """Cron Task Data Model / 定时任务数据模型"""
+    id: str                    # Unique ID, e.g., morning_routine / 唯一 ID，如 morning_routine
+    name: str                  # Task name, e.g., Morning Mode / 任务名称，如 早晨起床模式
+    cron: str                  # Cron expression, e.g., 0 7 * * * / cron 表达式，如 0 7 * * *（每天7点）
+    description: str           # Task description to be executed by the Agent / 任务描述，Agent 会执行此描述的指令
+    enabled: bool = True       # Whether the task is enabled / 是否启用
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
 class CronScheduler:
     """
-    定时任务引擎（Cron）。
+    Cron Task Engine. / 定时任务引擎（Cron）。
+    Uses cron expressions to trigger tasks for the Agent to execute. / 
     通过 cron 表达式设定触发时间，到时间后让 Agent 执行指定描述的任务。
     """
 
@@ -45,29 +47,29 @@ class CronScheduler:
         self._tasks: dict[str, CronTask] = {}
 
     async def start(self):
-        """启动调度器并加载持久化的任务"""
+        """Start scheduler and load persisted tasks / 启动调度器并加载持久化的任务"""
         self._load_tasks()
         self._scheduler.start()
-        # 注册所有已启用的任务
+        # Register all enabled tasks / 注册所有已启用的任务
         for task in self._tasks.values():
             if task.enabled:
                 self._register_job(task)
-        logger.info(f"[Cron] 调度器已启动，共 {len(self._tasks)} 个任务")
+        logger.info(f"[Cron] Scheduler started with {len(self._tasks)} tasks / 调度器已启动，共 {len(self._tasks)} 个任务")
 
     async def stop(self):
-        """停止调度器"""
+        """Stop the scheduler / 停止调度器"""
         self._scheduler.shutdown(wait=False)
-        logger.info("[Cron] 调度器已停止")
+        logger.info("[Cron] Scheduler stopped / 调度器已停止")
 
     def _register_job(self, task: CronTask):
-        """向 APScheduler 注册一个定时任务"""
+        """Register a job with APScheduler / 向 APScheduler 注册一个定时任务"""
         try:
-            # 解析 cron 表达式（标准5段格式：分 时 日 月 周）
+            # Parse cron expression (Standard 5-part: min hour day month week) / 解析 cron 表达式（标准5段格式：分 时 日 月 周）
             cron_parts = task.cron.split()
             if len(cron_parts) == 5:
                 minute, hour, day, month, day_of_week = cron_parts
             else:
-                logger.error(f"[Cron] 无效的 cron 表达式：{task.cron}")
+                logger.error(f"[Cron] Invalid cron expression: {task.cron} / 无效的 cron 表达式")
                 return
 
             trigger = CronTrigger(
@@ -87,23 +89,23 @@ class CronScheduler:
                 name=task.name,
                 replace_existing=True,
             )
-            logger.info(f"[Cron] 注册任务：{task.name} ({task.cron})")
+            logger.info(f"[Cron] Registered task: {task.name} ({task.cron}) / 注册任务")
         except Exception as e:
-            logger.error(f"[Cron] 注册任务 {task.id} 失败: {e}")
+            logger.error(f"[Cron] Failed to register task {task.id}: {e} / 注册任务失败")
 
     async def _execute_task(self, task: CronTask):
-        """定时触发：让 Agent 执行任务描述"""
+        """Triggered: let Agent execute description / 定时触发：让 Agent 执行任务描述"""
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
-        print(f"\n⏰ [{now}] Cron 任务触发：{task.name}")
+        print(f"\n⏰ [{now}] Cron Triggered: {task.name} / Cron 任务触发：{task.name}")
         try:
             result = await self.agent.run_background_task(
                 task_description=task.description,
-                system_override=f"你正在执行定时触发的任务：{task.name}。请根据描述完成操作：\n{task.description}",
+                system_override=f"You are executing a triggered cron task: {task.name}. Follow this description:\n{task.description}",
             )
             if result:
-                print(f"   结果：{result}")
+                print(f"   Result: {result} / 结果")
         except Exception as e:
-            logger.error(f"[Cron] 任务 {task.id} 执行失败: {e}")
+            logger.error(f"[Cron] Task {task.id} execution failed: {e} / 任务执行失败")
 
     def add_task(
         self,
@@ -113,16 +115,16 @@ class CronScheduler:
         description: str,
     ) -> str:
         """
-        动态添加一个新定时任务。
+        Dynamically add a new cron task. / 动态添加一个新定时任务。
 
         Args:
-            task_id: 唯一标识符
-            name: 任务名称
-            cron: cron 表达式（5段，标准格式）
-            description: 任务内容描述
+            task_id: Unique identifier / 唯一标识符
+            name: Task name / 任务名称
+            cron: Cron expression (5 segments) / cron 表达式
+            description: Task content description / 任务内容描述
 
         Returns:
-            操作结果字符串
+            Result message / 操作结果字符串
         """
         task = CronTask(
             id=task_id,
@@ -133,12 +135,12 @@ class CronScheduler:
         self._tasks[task_id] = task
         self._register_job(task)
         self._save_tasks()
-        return f"✅ Cron 任务 '{name}' 已添加，cron: {cron}"
+        return f"✅ Cron task '{name}' added, cron: {cron} / Cron 任务已添加"
 
     def remove_task(self, task_id: str) -> str:
-        """删除定时任务"""
+        """Remove a cron task / 删除定时任务"""
         if task_id not in self._tasks:
-            return f"❌ 未找到任务 ID：{task_id}"
+            return f"❌ ID not found: {task_id} / 未找到任务 ID"
 
         task = self._tasks.pop(task_id)
         try:
@@ -146,12 +148,12 @@ class CronScheduler:
         except Exception:
             pass
         self._save_tasks()
-        return f"✅ Cron 任务 '{task.name}' 已删除"
+        return f"✅ Cron task '{task.name}' removed / 定时任务已删除"
 
     def toggle_task(self, task_id: str, enabled: bool) -> str:
-        """启用或禁用定时任务"""
+        """Enable or disable a cron task / 启用或禁用定时任务"""
         if task_id not in self._tasks:
-            return f"❌ 未找到任务 ID：{task_id}"
+            return f"❌ ID not found: {task_id} / 未找到任务 ID"
 
         task = self._tasks[task_id]
         task.enabled = enabled
@@ -159,24 +161,24 @@ class CronScheduler:
 
         if enabled:
             self._register_job(task)
-            return f"✅ Cron 任务 '{task.name}' 已启用"
+            return f"✅ Task '{task.name}' enabled / 任务已启用"
         else:
             try:
                 self._scheduler.remove_job(task_id)
             except Exception:
                 pass
-            return f"✅ Cron 任务 '{task.name}' 已禁用"
+            return f"✅ Task '{task.name}' disabled / 任务已禁用"
 
     def list_tasks(self) -> list[dict]:
-        """列出所有定时任务"""
+        """List all cron tasks / 列出所有定时任务"""
         result = []
         for task in self._tasks.values():
-            # 计算下次触发时间
+            # Calculate next run time / 计算下次触发时间
             job = self._scheduler.get_job(task.id)
             next_run = (
                 job.next_run_time.strftime("%Y-%m-%d %H:%M:%S")
                 if job and job.next_run_time
-                else "已禁用"
+                else "Disabled / 已禁用"
             )
             result.append({
                 "id": task.id,
@@ -189,14 +191,14 @@ class CronScheduler:
         return result
 
     def _save_tasks(self):
-        """持久化任务列表到 YAML 文件"""
+        """Persist task list to YAML / 持久化任务列表到 YAML 文件"""
         CRONS_FILE.parent.mkdir(parents=True, exist_ok=True)
         data = [asdict(t) for t in self._tasks.values()]
         with open(CRONS_FILE, "w", encoding="utf-8") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
 
     def _load_tasks(self):
-        """从 YAML 文件加载持久化的任务"""
+        """Load persisted tasks from YAML / 从 YAML 文件加载持久化的任务"""
         if not CRONS_FILE.exists():
             return
         try:
@@ -205,6 +207,6 @@ class CronScheduler:
             for item in data:
                 task = CronTask(**item)
                 self._tasks[task.id] = task
-            logger.info(f"[Cron] 从文件加载了 {len(self._tasks)} 个任务")
+            logger.info(f"[Cron] Loaded {len(self._tasks)} tasks from file / 从文件加载了任务")
         except Exception as e:
-            logger.error(f"[Cron] 加载任务文件失败: {e}")
+            logger.error(f"[Cron] Failed to load tasks from file: {e} / 加载任务文件失败")
