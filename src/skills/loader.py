@@ -33,7 +33,7 @@ class SkillLoader:
         self.skills_dir = Path(skills_dir)
         self._skills: dict[str, BaseSkill] = {}
 
-    def load_all(self) -> dict[str, BaseSkill]:
+    def load_all(self, configs: dict = None) -> dict[str, BaseSkill]:
         """
         Scan and load all Skills, returns dictionary of loaded Skills. / 
         扫描并加载所有 Skill，返回已加载的 Skill 字典。
@@ -41,6 +41,8 @@ class SkillLoader:
         if not self.skills_dir.exists():
             logger.info(f"[Skill] skills/ directory not found, skipping. / 目录不存在，跳过加载")
             return {}
+
+        configs = configs or {}
 
         for skill_dir in self.skills_dir.iterdir():
             if not skill_dir.is_dir():
@@ -50,7 +52,11 @@ class SkillLoader:
                 continue
 
             try:
-                skill_instance = self._load_skill_from_file(skill_file)
+                # Get specific config for this skill / 获取该插件的专属配置
+                skill_name = skill_dir.name
+                skill_cfg = configs.get(skill_name, {})
+                
+                skill_instance = self._load_skill_from_file(skill_file, skill_cfg)
                 if skill_instance:
                     self._skills[skill_instance.name] = skill_instance
                     logger.info(
@@ -62,7 +68,7 @@ class SkillLoader:
 
         return self._skills
 
-    def _load_skill_from_file(self, skill_file: Path) -> BaseSkill | None:
+    def _load_skill_from_file(self, skill_file: Path, config: dict = None) -> BaseSkill | None:
         """
         Dynamically import skill.py, find and instantiate subclass of BaseSkill. / 
         动态导入 skill.py，找到并实例化 BaseSkill 的子类。
@@ -84,10 +90,19 @@ class SkillLoader:
                 and issubclass(attr, BaseSkill)
                 and attr is not BaseSkill
             ):
-                return attr()
+                # Try to instantiate with config if provided / 尝试使用配置实例化
+                try:
+                    return attr(config=config) if config else attr()
+                except TypeError:
+                    # Fallback to no-args instantiation if config not accepted / 如果不接受配置参数，回退到无参实例化
+                    return attr()
 
         logger.warning(f"[Skill] BaseSkill subclass not found in {skill_file} / 未找到子类")
         return None
+
+    def get_skill(self, name: str) -> BaseSkill | None:
+        """Get a specific loaded skill by name / 根据名称获取已加载的插件实例"""
+        return self._skills.get(name)
 
     def get_all_skills(self) -> dict[str, BaseSkill]:
         return self._skills

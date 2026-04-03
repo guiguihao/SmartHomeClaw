@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
 SmartHome Agent Entry Point / 智能家居 Agent 启动入口
-Usage: python main.py or python main.py chat / 用法: python main.py 或 python main.py chat
+
+Usage / 用法:
+  python main.py          # Show help / 显示帮助
+  python main.py chat     # Enter chat mode / 进入对话模式
+  python main.py serve    # Backend services only (Feishu listener, Heartbeat, Cron) / 仅后台服务
 """
 import sys
 import logging

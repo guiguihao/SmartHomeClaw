@@ -35,6 +35,7 @@ def load_config() -> dict:
     if not config_path.exists():
         console.print("[red]❌ Configuration file not found: config/agent.yaml / 找不到配置文件[/red]")
         sys.exit(1)
+    
     with open(config_path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
@@ -72,12 +73,8 @@ async def build_agent(cfg: dict):
 
     # 4. Load Skills / 加载 Skills
     skills = SkillLoader(skills_dir=str(ROOT / "skills"))
-    loaded = skills.load_all()
-    if loaded:
-        console.print(f"  ✓ Skills: {len(loaded)} plugins loaded / 个插件已加载 ({', '.join(loaded.keys())})")
-    else:
-        console.print("  ○ Skills: No plugins found / 未发现插件（可在 skills/ 目录下添加）")
-
+    loaded = skills.load_all(cfg.get("skills", {}))
+    
     # 5. Build Agent / 构建 Agent
     agent = Agent(
         name=cfg.get("agent", {}).get("name", "SmartHome Agent"),
@@ -89,20 +86,82 @@ async def build_agent(cfg: dict):
     )
     return agent, cfg
 
+@click.group()
+def cli():
+    """
+    🏠 SmartHome AI Agent
 
-@click.group(invoke_without_command=True)
-@click.pass_context
-def cli(ctx):
-    """🏠 SmartHome AI Agent - CLI Interface / 命令行交互界面"""
-    if ctx.invoked_subcommand is None:
-        # Default to chat mode / 默认进入对话模式
-        asyncio.run(run_chat())
+    充分利用 AI 的智能家居控制中型。
+    运行子命令来启动对应模式。
+    """
+    pass  # 不默认进入任何模式，显示帮助信息 / Show help by default
 
 
 @cli.command("chat")
 def chat_cmd():
-    """Enter chat mode (Default) / 进入对话模式（默认模式）"""
+    """Enter interactive chat mode / 进入对话模式"""
     asyncio.run(run_chat())
+
+
+@cli.command("serve")
+def serve_cmd():
+    """Start Agent backend services only (no CLI chat) / 仅启动后台服务，不进入对话"""
+    asyncio.run(run_serve())
+
+
+async def run_serve():
+    """
+    Start all background services without interactive chat.
+    仅启动叿书监听、心跳、Cron 等后台服务，不开启 CLI 对话。
+    """
+    cfg = load_config()
+    console.print(Panel.fit(
+        f"[bold cyan]🏠 {cfg.get('agent', {}).get('name', 'SmartHome Agent')}[/bold cyan]\n"
+        f"[dim]Version / 版本 {cfg.get('agent', {}).get('version', '1.0.0')} — Backend Mode / 后台模式[/dim]",
+        border_style="cyan",
+    ))
+
+    agent, cfg = await build_agent(cfg)
+
+    # Start Heartbeat / 启动心跳
+    hb_cfg = cfg.get("heartbeat", {})
+    heartbeat = None
+    if hb_cfg.get("enabled", True):
+        from src.core.heartbeat import HeartbeatScheduler
+        heartbeat = HeartbeatScheduler(
+            agent=agent,
+            interval_minutes=hb_cfg.get("interval_minutes", 5),
+            task_file=str(ROOT / hb_cfg.get("task_file", "config/HEARTBEAT.md")),
+        )
+        await heartbeat.start()
+        console.print(f"  ✓ Heartbeat: every {hb_cfg.get('interval_minutes', 5)} min")
+
+    # Start Cron / 启动Cron
+    from src.core.cron import CronScheduler
+    cron = CronScheduler(agent=agent)
+    await cron.start()
+    console.print(f"  ✓ Cron: Scheduler started")
+
+    # Start Feishu listener / 启动飞书监听
+    feishu_skill = agent.skills.get_skill("feishu")
+    if feishu_skill and cfg.get("skills", {}).get("feishu", {}).get("enable_listener"):
+        feishu_skill.start_listener(agent=agent, loop=asyncio.get_running_loop())
+        console.print(f"  ✓ Feishu: Background listener active")
+
+    console.print("\n[bold green]一切后台服务已启动，按 Ctrl+C 来停止...[/bold green]")
+
+    try:
+        # Keep the process alive / 保持运行
+        import asyncio as _asyncio
+        while True:
+            await _asyncio.sleep(60)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        pass
+    finally:
+        if heartbeat:
+            await heartbeat.stop()
+        await cron.stop()
+        console.print("\n[dim]👋 Backend services stopped / 后台服务已停止[/dim]")
 
 
 async def run_chat():
@@ -136,11 +195,17 @@ async def run_chat():
     from src.core.cron import CronScheduler
     cron = CronScheduler(agent=agent)
     await cron.start()
-    console.print(f"  ✓ Cron: Scheduler started / APScheduler 已启动\n")
+    console.print(f"  ✓ Cron: Scheduler started / APScheduler 已启动")
+
+    # 4.1 Start Feishu listener if configured / 启动飞书后台监听器（如果在加载的插件中存在）
+    feishu_skill = agent.skills.get_skill("feishu")
+    if feishu_skill and cfg.get("skills", {}).get("feishu", {}).get("enable_listener"):
+        feishu_skill.start_listener(agent=agent, loop=asyncio.get_running_loop())
+        console.print(f"  ✓ Feishu: Background listener active / 飞书：后台监听已激活")
 
     prompt = cfg.get("cli", {}).get("prompt", "🏠 > ")
 
-    console.print("[bold green]Ready! Please start chatting... / 就绪！请开始对话...[/bold green]\n")
+    console.print("\n[bold green]Ready! Please start chatting... / 就绪！请开始对话...[/bold green]\n")
 
     try:
         while True:

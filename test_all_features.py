@@ -13,14 +13,13 @@ from src.memory.manager import MemoryManager
 from src.mcp.client import MCPRegistry
 from src.skills.loader import SkillLoader
 from src.core.agent import Agent
+from src.cli.main import load_config
 
 async def run_test():
     print("--- 🚀 开始全方位功能测试 ---")
     
-    # 1. 加载配置
-    config_path = ROOT / "config" / "agent.yaml"
-    with open(config_path, encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
+    # 1. 加载配置 (使用解析环境变量的 load_config)
+    cfg = load_config()
     print(f"✅ 配置加载成功: {cfg.get('agent', {}).get('name')}")
 
     # 2. 初始化模型
@@ -39,7 +38,7 @@ async def run_test():
 
     # 5. 加载 Skills
     skills = SkillLoader(skills_dir=str(ROOT / "skills"))
-    loaded = skills.load_all()
+    loaded = skills.load_all(cfg.get("skills", {}))
     print(f"✅ Skills 加载成功: {list(loaded.keys())}")
 
     # 6. 构建 Agent

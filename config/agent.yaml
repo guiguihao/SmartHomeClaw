@@ -71,3 +71,12 @@ memory:
     profile: "USER_PROFILE.md"
     habits: "HABITS.md"
     facts: "FACTS.md"
+
+
+# Skills Config / 插件配置
+skills:
+  feishu:
+    app_id_env: "FEISHU_APP_ID"        # Env var name for App ID / App ID 环境变量名
+    app_secret_env: "FEISHU_APP_SECRET" # Env var name for App Secret / App Secret 环境变量名
+    enable_listener: true              # Enable WebSocket listener / 开启长连接监听
+    auto_reply: true                   # AI auto reply / 开启 AI 自动回复关键词
