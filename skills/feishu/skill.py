@@ -7,15 +7,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-import threading
-import lark_oapi as lark
-from lark_oapi.api.im.v1 import P2ImMessageReceiveV1
+import multiprocessing
+import multiprocessing.queues
 from typing import Any, Optional
+
+import lark_oapi as lark
 
 from src.skills.base import BaseSkill
 
 logger = logging.getLogger(__name__)
-
 
 class FeishuSkill(BaseSkill):
     """
@@ -41,27 +41,15 @@ class FeishuSkill(BaseSkill):
         if not self.app_id or not self.app_secret:
             logger.warning("[Feishu] Missing app_id or app_secret in config/env / 凭证缺失")
             self.client = None
-            self.ws_client = None
         else:
-            # 1. Initialize API Client / 初始化 API 客户端
+            # 1. Initialize API Client (used for sending messages in main process) / 
+            # 初始化 API 客户端（用于主进程主动发消息）
             self.client = lark.Client.builder() \
                 .app_id(self.app_id) \
                 .app_secret(self.app_secret) \
                 .build()
             
-            # 2. Initialize Event Handler / 初始化事件分发器
-            self.event_handler = lark.EventDispatcherHandler.builder("", "") \
-                .register_p2_im_message_receive_v1(self._on_message_received) \
-                .build()
-            
-            # 3. Initialize WebSocket Client (don't start yet) / 初始化长连接客户端（暂不启动）
-            self.ws_client = lark.ws.Client(
-                self.app_id, 
-                self.app_secret, 
-                event_handler=self.event_handler,
-                log_level=lark.LogLevel.INFO
-            )
-            logger.info("[Feishu] Client and Handler initialized / 飞书客户端与监听器已就绪")
+            logger.info("[Feishu] API Sender Client initialized / 飞书发送客户端已就绪")
 
     @property
     def name(self) -> str:
@@ -152,41 +140,16 @@ class FeishuSkill(BaseSkill):
         except:
             pass
 
-    def _on_message_received(self, data: P2ImMessageReceiveV1) -> None:
-        """Callback for message events / 收到消息事件的回调"""
-        msg = data.event.message
-        if not msg or not msg.content:
-            return
-            
-        try:
-            content_dict = json.loads(msg.content)
-            text = content_dict.get("text", "").strip()
-        except json.JSONDecodeError:
-            return
-
-        sender_id = data.event.sender.sender_id.open_id
-        
-        logger.info(f"📩 [Feishu Event] From {sender_id}: {text}")
-        
-        # Trigger auto-reply if enabled / 如果开启了自动回复，则触发处理
-        if self.config.get("auto_reply") and self.agent and self.loop:
-            # Dispatch to async handler safely across threads / 安全地跨线程分发到异步处理器
-            import asyncio
-            asyncio.run_coroutine_threadsafe(
-                self._handle_ai_reply(sender_id, text), 
-                self.loop
-            )
-
-    async def _handle_ai_reply(self, receive_id: str, text: str):
+    async def _handle_ai_reply(self, receive_id: str, text: str, agent: Any):
         """
-        Isolated AI processing for Feishu messages / 
-        针对飞书消息的独立 AI 处理逻辑
+        Isolated AI processing for Feishu messages. Triggered in main process via queue.
+        针对飞书消息的独立 AI 处理逻辑。由主进程队列轮询器触发。
         """
-        logger.info(f"🤖 [Feishu] AI is thinking for {receive_id}...")
+        logger.info(f"🤖 [Feishu AI] Thinking for {receive_id}...")
         
         # Use background task mode to avoid polluting main history / 
         # 使用后台任务模式，避免污染主对话历史
-        response = await self.agent.run_background_task(
+        response = await agent.run_background_task(
             task_description=f"User via Feishu says: {text} / 飞书用户说：{text}",
             system_override=None # Uses default system prompt / 使用默认系统提示词
         )
@@ -198,37 +161,30 @@ class FeishuSkill(BaseSkill):
                 receive_id_type="open_id"
             )
 
-    def start_listener(self, agent: Any = None, loop: Any = None):
-        """Start WS listener in a background thread / 在后台线程启动监听器"""
-        if not self.ws_client:
-            return
-            
-        self.agent = agent
-        self.loop = loop
-            
-        def run_ws():
-            """
-            Run the WebSocket client in its own completely isolated asyncio event loop.
-            This avoids 'event loop is already running' errors from the main thread.
-            在完全独立的 asyncio 事件循环中运行 WebSocket，避免与主线程事件循环冲突。
-            """
-            import asyncio as _asyncio
-            logger.info("[Feishu] Background WebSocket listener starting... / 后台长连接监听启动中...")
-            
-            try:
-                # asyncio.run() always creates a brand-new isolated event loop /
-                # asyncio.run() 总是创建全新事件循环，与主线程完全隔离
-                _asyncio.run(self._async_ws_run())
-            except Exception as e:
-                logger.error(f"[Feishu] WebSocket listener failed: {e} / 监听器意外中断")
-
-        thread = threading.Thread(target=run_ws, daemon=True)
-        thread.start()
-        return thread
-
-    async def _async_ws_run(self):
+    def start_listener(self) -> multiprocessing.queues.Queue | None:
         """
-        Async entry point for ws.Client.start() to be used in an isolated event loop.
-        在独立事件循环内作为协程运行 WebSocket 客户端。
+        Start WS listener in an isolated process and return the IPC queue. / 
+        在独立的后台进程启动监听器，并返回 IPC 通信队列。
         """
-        self.ws_client.start()
+        if not self.app_id or not self.app_secret:
+            return None
+            
+        logger.info("[Feishu] Spawning isolated listener process... / 正在孵化独立监听子进程...")
+        
+        # Create cross-process queue / 创建跨进程队列
+        msg_queue = multiprocessing.Queue()
+        
+        # Spawn the isolated process using absolutely resolvable module path /
+        # 使用原生包路径结构引用执行函数，确保子进程能成功解析环境
+        from skills.feishu.listener import run_process_listener
+        
+        process = multiprocessing.Process(
+            target=run_process_listener,
+            args=(self.app_id, self.app_secret, msg_queue),
+            daemon=True
+        )
+        process.start()
+        
+        return msg_queue
+
+
