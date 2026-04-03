@@ -47,6 +47,7 @@ class MCPClient:
         self.transport = config.get("transport", "stdio")
         self._tools: list[MCPTool] = []
         self._session = None  # mcp Session object / mcp Session 对象
+        self._exit_stack = None  # 用于保持连接上下文存活 / Keep context alive
 
     async def connect(self) -> bool:
         """
@@ -67,8 +68,16 @@ class MCPClient:
             logger.error(f"[MCP] Failed to connect to {self.name}: {e} / 连接失败")
             return False
 
+    async def disconnect(self):
+        """关闭连接并释放资源 / Close connection and release resources"""
+        if self._exit_stack:
+            await self._exit_stack.aclose()
+            self._exit_stack = None
+            self._session = None
+
     async def _connect_stdio(self) -> bool:
-        """Connect to local MCP Server process via stdio / 通过 stdio 连接本地 MCP Server 进程"""
+        """Connect to local MCP Server process via stdio / 通过 stdio 连接本地 MCP Server 进程，全程保持连接存活"""
+        from contextlib import AsyncExitStack
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
 
@@ -84,23 +93,29 @@ class MCPClient:
         )
 
         try:
-            async with stdio_client(server_params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    tools_result = await session.list_tools()
-                    self._tools = [
-                        MCPTool(self.name, t.model_dump())
-                        for t in tools_result.tools
-                    ]
-                    logger.info(f"[MCP] {self.name} connected successfully, found {len(self._tools)} tools / 连接成功")
-                    self._session = session
-                    return True
+            # 使用 AsyncExitStack 保持 stdio 进程与 session 长期存活
+            # Use AsyncExitStack to keep the subprocess and session alive permanently
+            stack = AsyncExitStack()
+            read, write = await stack.enter_async_context(stdio_client(server_params))
+            session = await stack.enter_async_context(ClientSession(read, write))
+            await session.initialize()
+            tools_result = await session.list_tools()
+            self._tools = [
+                MCPTool(self.name, t.model_dump())
+                for t in tools_result.tools
+            ]
+            # 保存 stack 和 session，防止 GC 关闭
+            self._exit_stack = stack
+            self._session = session
+            logger.info(f"[MCP] {self.name} connected (stdio), {len(self._tools)} tools / 连接成功，{len(self._tools)} 个工具")
+            return True
         except Exception as e:
             logger.error(f"[MCP] stdio connection failed: {e} / stdio 连接失败")
             return False
 
     async def _connect_http(self) -> bool:
-        """Connect to remote MCP Server via HTTP/SSE / 通过 HTTP/SSE 连接远程 MCP Server"""
+        """Connect to remote MCP Server via HTTP/SSE / 通过 HTTP/SSE 连接远程 MCP Server，全程保持连接存活"""
+        from contextlib import AsyncExitStack
         from mcp import ClientSession
         from mcp.client.sse import sse_client
 
@@ -110,17 +125,20 @@ class MCPClient:
             return False
 
         try:
-            async with sse_client(url) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    tools_result = await session.list_tools()
-                    self._tools = [
-                        MCPTool(self.name, t.model_dump())
-                        for t in tools_result.tools
-                    ]
-                    logger.info(f"[MCP] {self.name} connected successfully, found {len(self._tools)} tools / 连接成功")
-                    self._session = session
-                    return True
+            # 同样使用 AsyncExitStack 保持 SSE 连接存活
+            stack = AsyncExitStack()
+            read, write = await stack.enter_async_context(sse_client(url))
+            session = await stack.enter_async_context(ClientSession(read, write))
+            await session.initialize()
+            tools_result = await session.list_tools()
+            self._tools = [
+                MCPTool(self.name, t.model_dump())
+                for t in tools_result.tools
+            ]
+            self._exit_stack = stack
+            self._session = session
+            logger.info(f"[MCP] {self.name} connected (http), {len(self._tools)} tools / 连接成功，{len(self._tools)} 个工具")
+            return True
         except Exception as e:
             logger.error(f"[MCP] HTTP connection failed: {e} / HTTP 连接失败")
             return False

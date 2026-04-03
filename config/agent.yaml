@@ -49,13 +49,11 @@ heartbeat:
 # MCP Server Config / MCP Server 配置
 mcp_servers:
   # Examples / 示例：
-  # - name: "smarthome"
-  #   transport: "stdio"
-  #   command: ["python3", "/path/to/smarthome_mcp/server.py"]
-  # - name: "smarthome_http"
-  #   transport: "http"
-  #   url: "http://localhost:8080/mcp"
-  []
+  - name: "smarthome"
+    transport: "stdio"
+    command: ["/Volumes/sandiskSSD/Project/xuexi/linux_openclaw/.venv/bin/python3", "/Volumes/sandiskSSD/Project/xuexi/linux_openclaw/zhinengjiaju/smarthome_mcp/server.py"]
+
+
 
 # CLI Config / CLI 配置
 cli:

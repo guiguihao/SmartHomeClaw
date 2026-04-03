@@ -174,11 +174,22 @@ class FeishuSkill(BaseSkill):
             # 我们使用 'THINKING' 
             await self._add_reaction(message_id, "THINKING")
             
-        # Use background task mode to avoid polluting main history / 
         # 使用后台任务模式，避免污染主对话历史
+        # 为飞书场景构建专属的 System Override，强制 AI 优先使用工具而非猜测
+        from datetime import datetime
+        feishu_system = f"""你是智能家居 AI 助手。用户通过飞书发来消息，你需要帮助他们控制和查询家中的智能设备。
+
+重要规则：
+1. 你拥有 MCP 工具可以直接查询和控制设备，**必须调用工具**，不要猜测或说"可能是账号问题"。
+2. 用户问"查看我的家"、"我的设备"等，立刻调用相关 MCP 工具列出设备状态。
+3. 用户要控制设备（开灯/关空调等），直接调用工具执行，执行后简洁汇报结果。
+4. 如果工具调用真的失败，汇报真实的错误原因（返回的错误信息），不要虚构原因。
+5. 回复简洁，用中文，不需要过多寒暄。
+6. 当前时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}
+"""
         response = await agent.run_background_task(
-            task_description=f"User via Feishu says: {text} / 飞书用户说：{text}",
-            system_override=None # Uses default system prompt / 使用默认系统提示词
+            task_description=f"飞书用户说：{text}",
+            system_override=feishu_system,
         )
         
         if response:
