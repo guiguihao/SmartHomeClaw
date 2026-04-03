@@ -140,13 +140,40 @@ class FeishuSkill(BaseSkill):
         except:
             pass
 
-    async def _handle_ai_reply(self, receive_id: str, text: str, agent: Any):
+    async def _add_reaction(self, message_id: str, emoji_type: str) -> None:
+        """
+        Add an emoji reaction to a specific message / 给某个特定消息打表情表态
+        """
+        if not self.client or not message_id:
+            return
+            
+        try:
+            req = lark.im.v1.CreateMessageReactionRequest.builder() \
+                .message_id(message_id) \
+                .request_body(lark.im.v1.CreateMessageReactionRequestBody.builder()
+                    .reaction_type(lark.im.v1.Emoji.builder().emoji_type(emoji_type).build())
+                    .build()) \
+                .build()
+            
+            resp = await self.client.im.v1.message_reaction.acreate(req)
+            if not resp.success():
+                logger.error(f"[Feishu] Failed to add reaction '{emoji_type}': {resp.msg}. (Please ensure 'im:message.reaction:read' & 'im:message.reaction:write' permissions are enabled in Feishu Developer Console / 请确保飞书开放平台开启了应用表态权限)")
+        except Exception as e:
+            logger.error(f"[Feishu] Add reaction error: {e}")
+
+    async def _handle_ai_reply(self, receive_id: str, text: str, agent: Any, message_id: Optional[str] = None):
         """
         Isolated AI processing for Feishu messages. Triggered in main process via queue.
         针对飞书消息的独立 AI 处理逻辑。由主进程队列轮询器触发。
         """
         logger.info(f"🤖 [Feishu AI] Thinking for {receive_id}...")
         
+        # 像 OpenClaw 一样显示"正在思考/敲打键盘"的表情状态
+        if message_id:
+            # 飞书官方常用思考、打字的表情类型：'THINKING' (思考), 'WIP' (搬砖) 
+            # 我们使用 'THINKING' 
+            await self._add_reaction(message_id, "THINKING")
+            
         # Use background task mode to avoid polluting main history / 
         # 使用后台任务模式，避免污染主对话历史
         response = await agent.run_background_task(
@@ -160,6 +187,9 @@ class FeishuSkill(BaseSkill):
                 content=response, 
                 receive_id_type="open_id"
             )
+            # 在发送完毕后再打一个 DONE 的表态
+            if message_id:
+                await self._add_reaction(message_id, "DONE")
 
     def start_listener(self) -> multiprocessing.queues.Queue | None:
         """

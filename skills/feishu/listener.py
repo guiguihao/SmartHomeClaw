@@ -64,12 +64,14 @@ def run_process_listener(app_id: str, app_secret: str, msg_queue: multiprocessin
                 return
 
             sender_id = data.event.sender.sender_id.open_id
-            _logger.info(f"📩 [Feishu Process] Received message from {sender_id}: {text}")
+            msg_id = msg.message_id
+            _logger.info(f"📩 [Feishu Process] Received message '{msg_id}' from {sender_id}: {text}")
             
             # Put to queue, to be processed by main process AI logic /
             # 推入队列，交由主进程的 AI 逻辑处理
             msg_queue.put({
                 "receive_id": sender_id,
+                "message_id": msg_id,
                 "text": text
             })
             

@@ -115,11 +115,12 @@ async def _feishu_queue_watcher(queue: multiprocessing.queues.Queue, agent: Any,
                 msg = queue.get_nowait()
                 # If we get here, we have a message! Dispatch it to the AI.
                 receive_id = msg.get("receive_id")
+                message_id = msg.get("message_id")
                 text = msg.get("text")
                 if receive_id and text:
                     # Dispatch to isolated handler / 派发到处理函数
                     import asyncio
-                    asyncio.create_task(feishu_skill._handle_ai_reply(receive_id, text, agent))
+                    asyncio.create_task(feishu_skill._handle_ai_reply(receive_id, text, agent, message_id))
             except builtin_queue.Empty:
                 import asyncio
                 # No data, sleep and yield / 没有数据，休眠并让出事件循环
