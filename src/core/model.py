@@ -94,21 +94,37 @@ def load_model_from_config(cfg: dict) -> ModelClient:
     """
     从 agent.yaml 的 model 配置段中，解析并构建 ModelClient。
 
+    default 支持两种格式：
+      1. "{provider}/{model}"  —— 明确指定供应商（斜杠前是 provider name，其余是传给 API 的模型名）
+         示例：nvidia/openai/gpt-oss-120b  →  provider=nvidia, model=openai/gpt-oss-120b
+      2. "{model}"             —— 纯模型名，在所有 provider 的 models 列表中自动搜索
+         示例：deepseek-chat
+
     cfg 示例:
-        default: "deepseek-chat"
+        default: "nvidia/openai/gpt-oss-120b"
         providers:
-          - name: deepseek
-            base_url: "https://api.deepseek.com/v1"
-            api_key_env: "DEEPSEEK_API_KEY"
-            models: ["deepseek-chat"]
+          - name: nvidia
+            base_url: "https://integrate.api.nvidia.com/v1"
+            api_key_env: "NVIDIA_API_KEY"
+            models: ["openai/gpt-oss-120b"]
     """
-    default_model = cfg.get("default", "gpt-4o")
+    default_val = cfg.get("default", "gpt-4o")
     providers = cfg.get("providers", [])
 
-    # 找到包含默认模型的 provider
+    # 支持 provider/model 格式或纯模型名
+    if "/" in default_val:
+        target_provider, target_model = default_val.split("/", 1)
+    else:
+        target_provider, target_model = None, default_val
+
+    # 找到匹配的 provider
     matched: Optional[dict] = None
     for provider in providers:
-        if default_model in provider.get("models", []):
+        if target_provider:
+            if provider.get("name") == target_provider:
+                matched = provider
+                break
+        elif target_model in provider.get("models", []):
             matched = provider
             break
 
@@ -123,7 +139,7 @@ def load_model_from_config(cfg: dict) -> ModelClient:
     api_key = os.environ.get(matched.get("api_key_env", "OPENAI_API_KEY"), "")
 
     model_cfg = ModelConfig(
-        name=default_model,
+        name=target_model,
         provider=matched["name"],
         base_url=matched["base_url"],
         api_key=api_key,
