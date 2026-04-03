@@ -56,11 +56,49 @@ An OpenClaw-inspired local AI Agent framework for smart home automation. It supp
 
 ## Developer Guide / 开发者指南
 
-### Add Skills / 添加插件
-Create a subdirectory in `skills/` with `skill.py` (inheriting `BaseSkill`) and `SKILL.md`.  
-在 `skills/` 下创建子目录，包含 `skill.py`（继承 `BaseSkill`）和 `SKILL.md`。
+### Supported Models / 支持的模型 (OpenAI 协议兼容)
+Configured in `config/agent.yaml` / 在 `config/agent.yaml` 中配置，启动时选择：
+- **OpenAI**: GPT-4o / GPT-4o-mini
+- **DeepSeek**: deepseek-v3 (recommended / 推荐，性价比高)
+- **Anthropic**: Claude Sonnet
+- **Ollama**: Local models / 本地模型 (qwen2.5, llama3)
+- **Nvidia**: Free models / 免费模型 (gpt-oss-120b)
 
-### Memory Files / 记忆文件
-- `memory/USER_PROFILE.md`: User preferences / 用户偏好
+Switch command / 切换命令：`/model deepseek-chat`
+
+### Add Skills / 添加插件 (智能家居厂商接入)
+Create a subdirectory in `skills/` / 在 `skills/` 目录下创建子目录：
+```text
+skills/
+└── your_brand_name/ (你的品牌名)
+    ├── SKILL.md      # Setup documentation / 接入说明
+    └── skill.py      # Implements BaseSkill / 继承 BaseSkill 的实现
+```
+Reference / 参考：`skills/demo_smarthome/skill.py`
+
+### MCP Server Integration / 接入 MCP Server
+Configure in `config/agent.yaml` / 在 `config/agent.yaml` 中配置：
+```yaml
+mcp_servers:
+  - name: "smarthome"
+    transport: "stdio"
+    command: ["python3", "/path/to/smarthome_mcp/server.py"]
+```
+
+### Memory System / 记忆系统
+Agent automatically discovers user habits and writes to `memory/`. / Agent 会自动发现用户习惯并写入 `memory/` 目录：
+- `memory/USER_PROFILE.md`: User preferences (editable) / 用户偏好（可手动编辑）
 - `memory/HABITS.md`: Discovered habits / 自动发现的习惯
-- `memory/FACTS.md`: Static home facts / 环境固定事实
+- `memory/FACTS.md`: Static home facts (suggested manual entry) / 家居固定信息（建议手动填写）
+
+### Heartbeat Mechanism / 心跳机制
+Agent executes health checks from `config/HEARTBEAT.md` silently every 5 minutes (configurable). / Agent 每 5 分钟（可配置）自动执行 `config/HEARTBEAT.md` 中的检查任务，后台静默运行。
+
+### Scheduled Scenes / 定时场景
+```text
+/cron add
+> Task ID / 任务 ID: morning_routine
+> Task Name / 任务名称: Morning Mode / 早晨起床模式
+> Cron: 0 7 * * *
+> Description / 描述: Turn on living room lights, set brightness to 80%, report weather / 打开客厅灯，亮度设为80%，播报今日天气
+```
