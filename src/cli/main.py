@@ -207,9 +207,9 @@ async def handle_slash_command(
 | `/status` | 查看 Agent 状态 |
 | `/model [名称]` | 查看或切换模型 |
 | `/memory` | 查看记忆文件内容 |
-| `/schedule list` | 列出定时任务 |
-| `/schedule add` | 添加定时任务（引导式） |
-| `/schedule del <id>` | 删除定时任务 |
+| `/cron list` | 列出定时任务 |
+| `/cron add` | 添加定时任务（引导式） |
+| `/cron del <id>` | 删除定时任务 |
 | `/heartbeat` | 立即触发心跳检查 |
 | `/skills` | 列出已加载的 Skills |
 | `/mcp` | 列出 MCP 连接状态 |
@@ -240,7 +240,7 @@ async def handle_slash_command(
         else:
             console.print("[dim]记忆文件为空[/dim]")
 
-    elif command == "/schedule":
+    elif command == "/cron":
         if len(parts) < 2:
             _print_schedule_list(scheduler)
         elif parts[1] == "list":
@@ -251,7 +251,7 @@ async def handle_slash_command(
             result = scheduler.remove_task(parts[2])
             console.print(result)
         else:
-            console.print("[yellow]用法：/schedule [list|add|del <id>][/yellow]")
+            console.print("[yellow]用法：/cron [list|add|del <id>][/yellow]")
 
     elif command == "/heartbeat":
         if heartbeat:
@@ -336,7 +336,7 @@ def _print_schedule_list(scheduler):
     """打印定时任务列表"""
     tasks = scheduler.list_tasks()
     if not tasks:
-        console.print("[dim]暂无定时任务，使用 /schedule add 添加[/dim]")
+        console.print("[dim]暂无定时任务，使用 /cron add 添加[/dim]")
         return
 
     table = Table(title="定时任务", border_style="cyan")

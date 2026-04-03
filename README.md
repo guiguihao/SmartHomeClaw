@@ -38,9 +38,9 @@ python main.py
 | `/status` | 查看 Agent 状态 |
 | `/model [名称]` | 查看/切换模型 |
 | `/memory` | 查看记忆内容 |
-| `/schedule list` | 列出定时任务 |
-| `/schedule add` | 添加定时任务 |
-| `/schedule del <id>` | 删除定时任务 |
+| `/cron list` | 列出定时任务 |
+| `/cron add` | 添加定时任务 |
+| `/cron del <id>` | 删除定时任务 |
 | `/heartbeat` | 手动触发心跳 |
 | `/skills` | 查看已加载 Skill |
 | `/mcp` | 查看 MCP 连接 |
@@ -95,7 +95,7 @@ Agent 每 5 分钟（可配置）自动执行 `config/HEARTBEAT.md` 中的检查
 ## 定时场景
 
 ```
-/schedule add
+/cron add
 > 任务 ID: morning_routine
 > 任务名称: 早晨起床模式
 > Cron: 0 7 * * *
