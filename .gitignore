@@ -30,6 +30,5 @@ config/schedules.yaml
 # 日志
 *.log
 logs/
-
 # macOS
 .DS_Store
