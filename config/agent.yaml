@@ -1,0 +1,68 @@
+# 智能家居 Agent 主配置文件
+
+agent:
+  name: "SmartHome Agent"
+  version: "1.0.0"
+  description: "本地智能家居 AI Agent，支持 MCP/Skill 扩展"
+
+# LLM 模型配置（支持任何 OpenAI 协议兼容模型）
+model:
+  # 默认模型配置
+  default: "gpt-4o"
+  # 模型列表（可按需切换）
+  providers:
+    - name: "openai"
+      base_url: "https://api.openai.com/v1"
+      api_key_env: "OPENAI_API_KEY"
+      models:
+        - "gpt-4o"
+        - "gpt-4o-mini"
+    - name: "deepseek"
+      base_url: "https://api.deepseek.com/v1"
+      api_key_env: "DEEPSEEK_API_KEY"
+      models:
+        - "deepseek-chat"
+        - "deepseek-reasoner"
+    - name: "claude"
+      base_url: "https://api.anthropic.com/v1"
+      api_key_env: "ANTHROPIC_API_KEY"
+      models:
+        - "claude-sonnet-4-5"
+    - name: "local"
+      base_url: "http://localhost:11434/v1"
+      api_key_env: "OLLAMA_API_KEY"  # 随便填，Ollama不校验
+      models:
+        - "qwen2.5:7b"
+        - "llama3.2:3b"
+
+# 心跳配置
+heartbeat:
+  enabled: true
+  interval_minutes: 5       # 心跳间隔（分钟）
+  task_file: "config/HEARTBEAT.md"  # 心跳任务描述文档
+
+# MCP Server 配置
+mcp_servers:
+  # 示例：智能家居 MCP Server（由设备厂商提供）
+  # - name: "smarthome"
+  #   transport: "stdio"
+  #   command: ["python3", "/path/to/smarthome_mcp/server.py"]
+  # - name: "smarthome_http"
+  #   transport: "http"
+  #   url: "http://localhost:8080/mcp"
+  []
+
+# CLI 配置
+cli:
+  prompt: "🏠 > "          # 命令行提示符
+  history_file: ".agent_history"  # 命令历史文件
+  max_context_turns: 20    # 最大对话轮数
+
+# 记忆配置
+memory:
+  dir: "memory"
+  auto_save: true           # 对话后自动分析并保存习惯
+  files:
+    profile: "USER_PROFILE.md"
+    habits: "HABITS.md"
+    facts: "FACTS.md"

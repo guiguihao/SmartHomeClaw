@@ -1,0 +1,35 @@
+# Python 虚拟环境
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# 环境变量（包含 API Keys，不提交）
+.env
+
+# 记忆文件（个人数据，不提交）
+memory/
+
+# 定时任务数据
+config/schedules.yaml
+
+# 命令历史
+.agent_history
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 日志
+*.log
+logs/
+
+# macOS
+.DS_Store
