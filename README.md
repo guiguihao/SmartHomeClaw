@@ -1,4 +1,4 @@
-# SmartHome Agent / 智能家居 Agent
+# SmartHomeclaw / 智能家居龙虾
 
 [English](#english) | [中文](#中文)
 
@@ -20,7 +20,7 @@ cp .env.example .env
 #### 2. Set Default Model in `config/agent.yaml`
 ```yaml
 model:
-  default: "deepseek-chat"   # Change to the model you want to use
+  default: "deepseek-v3"   # Change to the model you want to use
 ```
 
 #### 3. Start Agent
@@ -45,7 +45,7 @@ python main.py
 | `/cron list` | List scheduled tasks |
 | `/cron add` | Add scheduled task |
 | `/cron del <id>` | Delete scheduled task |
-| `/heartbeat` | Manually trigger heartbeat |
+| `/heartbeat` | trigger heartbeat |
 | `/skills` | List loaded Skills |
 | `/mcp` | List MCP connections |
 
@@ -111,7 +111,7 @@ Agent automatically executes health checks from `config/HEARTBEAT.md` silently i
 <a name="中文"></a>
 ## 中文说明
 
-基于 OpenClaw 架构打造的智能家居 AI Agent，支持多模型切换、心跳机制、定时任务、MCP Server 集成和 Skill 插件系统。
+基于 OpenClaw 思想打造的智能家居 AI Agent，支持多模型切换、心跳机制、定时任务、MCP Server 集成和 Skill 插件系统。
 
 ### 快速开始
 
@@ -126,7 +126,7 @@ cp .env.example .env
 
 ```yaml
 model:
-  default: "deepseek-chat"   # 改成你要用的模型
+  default: "deepseek-v3"   # 改成你要用的模型
 ```
 
 #### 3. 启动 Agent
@@ -152,7 +152,7 @@ python main.py
 | `/cron list` | 列出定时任务 |
 | `/cron add` | 添加定时任务 |
 | `/cron del <id>` | 删除定时任务 |
-| `/heartbeat` | 手动触发心跳 |
+| `/heartbeat` | 触发心跳 |
 | `/skills` | 查看已加载 Skill |
 | `/mcp` | 查看 MCP 连接 |
 
