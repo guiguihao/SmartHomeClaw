@@ -3,6 +3,7 @@
 agent:
   name: "SmartHome Agent"
   version: "1.0.0"
+  session_dir: "sessions"      # Directory for persisting chat history / 聊天历史持久化目录
   description: "Local SmartHome AI Agent, supports MCP/Skill extension / 本地智能家居 AI Agent，支持 MCP/Skill 扩展"
 
 # LLM Model Config (OpenAI compatible) / LLM 模型配置（支持任何 OpenAI 协议兼容模型）

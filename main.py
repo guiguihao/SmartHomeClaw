@@ -52,9 +52,13 @@ def setup_logging():
     file_handler.setLevel(log_level)
     file_handler.setFormatter(fmt)
 
-    # Console Handler: WARNING and above only to keep CLI clean / 终端 Handler：只显示 WARNING 以上，不打扰对话界面
+    # Console Handler: Default WARNING, but show all if global level is DEBUG / 
+    # 终端 Handler：默认只显示 WARNING，但若全局设为 DEBUG 则开启完整输出
     console_handler = logging.StreamHandler(sys.stderr)
-    console_handler.setLevel(logging.WARNING)
+    if log_level == logging.DEBUG:
+        console_handler.setLevel(logging.DEBUG)
+    else:
+        console_handler.setLevel(logging.WARNING)
     console_handler.setFormatter(fmt)
 
     root_logger.addHandler(file_handler)

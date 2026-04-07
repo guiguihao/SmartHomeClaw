@@ -5,9 +5,11 @@ Integrates Model / Memory / MCP / Skills subsystems / 整合 Model / Memory / MC
 """
 from __future__ import annotations
 
+import os
 import json
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from src.core.model import ModelClient
@@ -18,22 +20,35 @@ from src.skills.loader import SkillLoader
 logger = logging.getLogger(__name__)
 
 # Agent System Prompt Base Template / Agent 系统提示词基础模板
-BASE_SYSTEM_PROMPT = """You are a SmartHome AI Agent named "{agent_name}". / 你是一个智能家居 AI Agent，名叫"{agent_name}"。
+BASE_SYSTEM_PROMPT = """你是一个极其聪明、动作果断的物理智能家居 AI 管家，名叫 "{agent_name}"。
+你驻留在用户的家庭服务器中，通过各种工具（Memory / MCP / Skills）感知并控制物理世界。
 
-Your Capabilities / 你的能力：
-- Control and query smart home devices via tools / 通过工具控制和查询智能家居设备
-- Record user preferences and habits for a personalized experience / 记录用户的偏好和习惯，提供个性化体验
-- Execute timed scenes and automation rules / 执行定时场景和自动化规则
-- Proactively learn user behavior patterns / 主动学习用户的使用习惯
+### 行动准则 (Action Principles) - 极其重要
+1. **探测优先 (Probing-First)**：如果用户的意图涉及查询（如“几个家”、“有什么设备”、“状态如何”），**严禁**反向询问用户以获取信息。你拥有工具，你应该**立即调用工具**自助查询，然后再给出结论。
+2. **拒绝平庸**：不要做一个只会复读和确认的复读机。你的价值在于通过后台操作减少用户的认知负担。
+3. **静默多步执行**：如果一个任务需要多步（如：查家 -> 选家 -> 查设备），请在一次回复前连续调用所有必要工具，直接汇报最终发现。
+4. **歧义处理**：只有当工具返回依然存在无法确定的多项选择时，才礼貌地请用户选择。
 
-Work Principles / 工作原则：
-1. Prioritize confirming user intent before operating devices (safety-critical actions must be confirmed) / 操作设备前，优先确认用户意图（涉及安全的操作必须确认）
-2. Proactively call memory tools to record discovered user routines / 发现用户规律性行为后，主动调用记忆工具记录
-3. Keep responses concise and clear, ask for details when necessary / 回复简洁清晰，必要时主动询问细节
-4. Provide clear explanations and suggestions if a tool call fails / 如果工具调用失败，给出明确说明和建议
-5. Current Time / 当前时间：{current_time}
+### 思路示例 (Few-shot Learning)
+- **场景 A（查询数量）**
+  用户：我有几个家？
+  你的思考：用户在询问家庭数量，我应该调用工具列出家庭。
+  你的行动：[调用 mcp_..._list_homes]
+  你的回复：您名下一共有 2 个家，分别是“我的家 79”和“办公室”。需要我进一步为您展示设备吗？
 
+- **场景 B（模糊意图）**
+  用户：帮我看看家里有没有异常。
+  你的思考：用户需要体检。我需要先查家庭列表，然后对每个家进行巡检。
+  你的行动：[连续调用 list_homes, query_dev_stat 等]
+  你的回复：报告管家，经过巡检：您的客厅温控器当前离线，其余 15 台设备运行正常。建议您检查一下客厅网关的电源。
+
+### 实时环境 (Real-time Context)
+- **当前时间**：{current_time}
+- **记忆与历史**：
 {memory_context}
+
+---
+请开始你的服务。**少说话，多干活**，做一个让用户感到“省心”的管家。
 """
 
 
@@ -57,6 +72,7 @@ class Agent:
         skill_loader: SkillLoader,
         max_context_turns: int = 20,
         max_tool_iterations: int = 10,
+        session_dir: str = "sessions",
     ):
         self.name = name
         self.model = model_client
@@ -65,8 +81,14 @@ class Agent:
         self.skills = skill_loader
         self.max_context_turns = max_context_turns
         self.max_tool_iterations = max_tool_iterations
+        self.session_dir = Path(session_dir)
+        
+        # Ensure session directory exists / 确保会话目录存在
+        self.session_dir.mkdir(parents=True, exist_ok=True)
 
-        # Conversation history (sliding window) / 对话历史（滑动窗口）
+        # Managed sessions (history by ID) / 分会话管理的历史记录
+        self._sessions: dict[str, list[dict]] = {}
+        # Default history (for CLI/legacy) / 默认历史记录（用于 CLI/旧版）
         self._history: list[dict] = []
 
     def _build_system_prompt(self) -> str:
@@ -111,28 +133,73 @@ class Agent:
         else:
             return f"❌ Unknown tool type / 未知工具类型：{tool_name}"
 
-    async def chat(self, user_message: str) -> str:
+    def _get_session_path(self, session_id: str) -> Path:
+        """Get the file path for a session / 获取会话的文件保存路径"""
+        # Sanitize filename (basic)
+        safe_id = "".join([c for c in session_id if c.isalnum() or c in ("-", "_")])
+        return self.session_dir / f"{safe_id}.json"
+
+    def _save_session_to_disk(self, session_id: str, history: list[dict]):
+        """Persist session history to disk / 将会话历史持久化到磁盘"""
+        path = self._get_session_path(session_id)
+        
+        # Sanitize OpenAI objects before saving / 保存前净化对象
+        def _sanitize(obj):
+            if obj is None: return None
+            if isinstance(obj, list): return [_sanitize(i) for i in obj]
+            if isinstance(obj, dict): return {k: _sanitize(v) for k, v in obj.items()}
+            if hasattr(obj, "model_dump"): return _sanitize(obj.model_dump())
+            if hasattr(obj, "to_dict"): return _sanitize(obj.to_dict())
+            return str(obj)
+
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(_sanitize(history), f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[Agent] Failed to save session {session_id}: {e}")
+
+    def _load_session_from_disk(self, session_id: str) -> list[dict]:
+        """Load session history from disk / 从磁盘加载会话历史"""
+        path = self._get_session_path(session_id)
+        if not path.exists():
+            return []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"[Agent] Failed to load session {session_id}: {e}")
+            return []
+
+    async def chat(
+        self, 
+        user_message: str, 
+        session_id: Optional[str] = "default",
+        system_override: Optional[str] = None
+    ) -> str:
         """
-        Process a user message and return the Agent's response. / 处理一条用户消息，返回 Agent 的回复。
-        Executes a full tool_use loop until a final text response is obtained / 内部会执行完整的 tool_use 循环直到得到最终文本回复。
-
-        Args:
-            user_message: User input / 用户输入的消息
-
-        Returns:
-            Final text response / Agent 的最终文字回复
+        Process a user message and return the Agent's response. / 处理一条用户消息。
+        Session isolation and DISK PERSISTENCE enabled. / 支持多会话隔离及磁盘持久化。
         """
-        # Add user message to history / 添加用户消息到历史
-        self._history.append({"role": "user", "content": user_message})
+        sid = session_id or "default"
+        
+        # 1. Load from disk if not in memory cache / 如果内存没有，尝试从磁盘加载
+        if sid not in self._sessions:
+            self._sessions[sid] = self._load_session_from_disk(sid)
+        
+        history = self._sessions[sid]
 
-        # Sliding window: keep recent N turns / 滑动窗口：保留最近 N 轮
-        if len(self._history) > self.max_context_turns * 2:
-            self._history = self._history[-(self.max_context_turns * 2):]
+        # 2. Process chat / 执行对话
+        history.append({"role": "user", "content": user_message})
 
-        # Build full message list (system + history) / 构建完整消息列表（system + history）
+        # Sliding window / 滑动窗口
+        if len(history) > self.max_context_turns * 2:
+            history[:] = history[-(self.max_context_turns * 2):]
+
+        # Build full message list / 构建完整消息列表
+        system_msg = system_override or self._build_system_prompt()
         messages = [
-            {"role": "system", "content": self._build_system_prompt()},
-            *self._history,
+            {"role": "system", "content": system_msg},
+            *history,
         ]
 
         tools = self._get_all_tools()
@@ -141,16 +208,14 @@ class Agent:
         # Tool use loop / Tool use 循环
         for iteration in range(self.max_tool_iterations):
             response_msg = await self.model.chat(
-                messages=messages,
+                messages=[{"role": "system", "content": system_msg}] + history,
                 tools=tools if tools else None,
             )
 
-            # Check for tool calls / 检查是否有工具调用
-            if hasattr(response_msg, "tool_calls") and response_msg.tool_calls:
-                # Add assistant message (with tool_calls) to messages / 将 assistant 消息（含 tool_calls）加入历史
-                messages.append(response_msg)
+            # Important: Add model's intermediate response to history / 将模型中间响应（可能含 Tool Calls）存入历史
+            history.append(response_msg)
 
-                # Process all tool calls sequentially / 依次处理所有工具调用
+            if hasattr(response_msg, "tool_calls") and response_msg.tool_calls:
                 for tool_call in response_msg.tool_calls:
                     tool_name = tool_call.function.name
                     try:
@@ -159,28 +224,29 @@ class Agent:
                         arguments = {}
 
                     tool_result = await self._handle_tool_call(tool_name, arguments)
-                    logger.info(f"[Agent] Tool / 工具 {tool_name} → {tool_result[:100]}")
+                    logger.info(f"[Agent] [{session_id or 'default'}] Tool {tool_name} → {tool_result[:100]}")
 
-                    # Add tool result to message history / 将工具结果加入消息历史
-                    messages.append({
+                    # Add tool result to history / 将工具执行结果存入历史
+                    history.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "content": tool_result,
                     })
-
-                # Continue loop to generate next step / 继续循环，让 Agent 根据工具结果生成下一步
+                
+                # Continue loop: it will use the updated history in next iteration / 继续迭代，下一轮将看到完整的上下文
                 continue
-
             else:
-                # Final text response obtained / 没有工具调用，得到最终文字回复
                 final_response = response_msg.content or ""
                 break
         else:
-            final_response = "（Max tool iterations reached, task may be incomplete / 已达到最大工具调用次数，任务可能未完成）"
-
-        # Add assistant's final response to history / 将 assistant 的最终回复加入历史
+            final_response = "（Max tool iterations reached）"
+        
+        # Add assistant's final response to history / 将回复加入历史
         if final_response:
-            self._history.append({"role": "assistant", "content": final_response})
+            history.append({"role": "assistant", "content": final_response})
+
+        # 3. Synchronize to disk after each turn / 每一轮对话结束，同步保存到磁盘
+        self._save_session_to_disk(sid, history)
 
         return final_response
 
@@ -236,10 +302,20 @@ class Agent:
 
         return final_response
 
-    def clear_history(self):
-        """Clear conversation history / 清除对话历史"""
-        self._history.clear()
+    def clear_history(self, session_id: Optional[str] = None):
+        """Clear session history (memory + disk) / 清除对话历史（内存+磁盘）"""
+        sid = session_id or "default"
+        if sid in self._sessions:
+            self._sessions[sid].clear()
+        
+        # Also delete local file / 同时删除本地文件
+        path = self._get_session_path(sid)
+        if path.exists():
+            path.unlink()
+        
+        logger.info(f"[Agent] Cleared history for session: {sid}")
 
     @property
     def history_length(self) -> int:
-        return len(self._history)
+        # Default to "default" session for CLI status / 针对 CLI 默认返回 default 会话的长度
+        return len(self._sessions.get("default", []))

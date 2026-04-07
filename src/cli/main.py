@@ -83,6 +83,7 @@ async def build_agent(cfg: dict):
         mcp_registry=mcp,
         skill_loader=skills,
         max_context_turns=cfg.get("cli", {}).get("max_context_turns", 20),
+        session_dir=cfg.get("agent", {}).get("session_dir", "sessions"),
     )
     return agent, cfg
 

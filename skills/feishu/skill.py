@@ -174,22 +174,23 @@ class FeishuSkill(BaseSkill):
             # 我们使用 'THINKING' 
             await self._add_reaction(message_id, "THINKING")
             
-        # 使用后台任务模式，避免污染主对话历史
-        # 为飞书场景构建专属的 System Override，强制 AI 优先使用工具而非猜测
-        from datetime import datetime
-        feishu_system = f"""你是智能家居 AI 助手。用户通过飞书发来消息，你需要帮助他们控制和查询家中的智能设备。
-
-重要规则：
-1. 你拥有 MCP 工具可以直接查询和控制设备，**必须调用工具**，不要猜测或说"可能是账号问题"。
-2. 用户问"查看我的家"、"我的设备"等，立刻调用相关 MCP 工具列出设备状态。
-3. 用户要控制设备（开灯/关空调等），直接调用工具执行，执行后简洁汇报结果。
-4. 如果工具调用真的失败，汇报真实的错误原因（返回的错误信息），不要虚构原因。
-5. 回复简洁，用中文，不需要过多寒暄。
-6. 当前时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}
+        # 获取核心系统的基础提示词（包含记忆、角色、思维模式等）
+        base_system = agent._build_system_prompt()
+        
+        # 叠加飞书渠道特有的交互约束
+        feishu_constraints = """
+### 飞书交互规范 (Feishu Channel Rules)
+- **简洁性**：飞书是即时通讯工具，回复请尽量精炼，避免大段冗余信息。
+- **表情反馈**：你目前的思考和完成状态已通过消息表态（Reaction）反馈给用户，回复文本中无需重复说明“正在思考”等。
+- **排版**：使用清晰的换行或列表展示设备状态。
 """
-        response = await agent.run_background_task(
-            task_description=f"飞书用户说：{text}",
-            system_override=feishu_system,
+        full_system = f"{base_system}\n{feishu_constraints}"
+
+        # 使用 agent.chat 接口，并传入 session_id 以实现多轮对话上下文追踪
+        response = await agent.chat(
+            user_message=text,
+            session_id=receive_id,
+            system_override=full_system,
         )
         
         if response:

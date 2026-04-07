@@ -71,6 +71,30 @@ class ModelClient:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
 
+        # [DEBUG] Print full context / 打印发送给模型的完整上下文
+        import json
+        import logging
+        _logger = logging.getLogger(__name__)
+
+        def _sanitize(obj):
+            """Helper to make OpenAI objects serializable / 辅助函数：使对象可序列化"""
+            if isinstance(obj, list):
+                return [_sanitize(i) for i in obj]
+            if isinstance(obj, dict):
+                return {k: _sanitize(v) for k, v in obj.items()}
+            if hasattr(obj, "model_dump"): # Pydantic v2 (OpenAI SDK > 1.0)
+                return _sanitize(obj.model_dump())
+            if hasattr(obj, "to_dict"): # Legacy or other formats
+                return _sanitize(obj.to_dict())
+            return str(obj)
+
+        _logger.debug("="*40 + " [LLM REQUEST START] " + "="*40)
+        _logger.debug(f"Model: {self._config.name} / Provider: {self._config.provider}")
+        _logger.debug(f"Messages:\n{json.dumps(_sanitize(messages), indent=2, ensure_ascii=False)}")
+        if tools:
+            _logger.debug(f"Tools Count: {len(tools)}")
+        _logger.debug("="*40 + " [LLM REQUEST END]   " + "="*40)
+
         response = await self._client.chat.completions.create(**kwargs)
         return response.choices[0].message
 
