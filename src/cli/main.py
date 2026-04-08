@@ -118,10 +118,11 @@ async def _feishu_queue_watcher(queue: multiprocessing.queues.Queue, agent: Any,
                 receive_id = msg.get("receive_id")
                 message_id = msg.get("message_id")
                 text = msg.get("text")
+                app_name = msg.get("app_name")
                 if receive_id and text:
                     # Dispatch to isolated handler / 派发到处理函数
                     import asyncio
-                    asyncio.create_task(feishu_skill._handle_ai_reply(receive_id, text, agent, message_id))
+                    asyncio.create_task(feishu_skill._handle_ai_reply(receive_id, text, agent, message_id, app_name=app_name))
             except builtin_queue.Empty:
                 import asyncio
                 # No data, sleep and yield / 没有数据，休眠并让出事件循环
@@ -178,9 +179,10 @@ async def run_serve():
     # Start Feishu listener / 启动飞书监听
     feishu_skill = agent.skills.get_skill("feishu")
     if feishu_skill and cfg.get("skills", {}).get("feishu", {}).get("enable_listener"):
-        msg_queue = feishu_skill.start_listener()
-        if msg_queue:
-            asyncio.create_task(_feishu_queue_watcher(msg_queue, agent, feishu_skill))
+        queues = feishu_skill.start_listener()
+        if queues:
+            for app_name, q in queues.items():
+                asyncio.create_task(_feishu_queue_watcher(q, agent, feishu_skill))
         console.print(f"  ✓ Feishu: Background listener (Isolated Process) active")
 
     console.print("\n[bold green]一切后台服务已启动，按 Ctrl+C 来停止...[/bold green]")
@@ -235,9 +237,10 @@ async def run_chat():
     # 4.1 Start Feishu listener if configured / 启动飞书后台监听器（如果在加载的插件中存在）
     feishu_skill = agent.skills.get_skill("feishu")
     if feishu_skill and cfg.get("skills", {}).get("feishu", {}).get("enable_listener"):
-        msg_queue = feishu_skill.start_listener()
-        if msg_queue:
-            asyncio.create_task(_feishu_queue_watcher(msg_queue, agent, feishu_skill))
+        queues = feishu_skill.start_listener()
+        if queues:
+            for app_name, q in queues.items():
+                asyncio.create_task(_feishu_queue_watcher(q, agent, feishu_skill))
         console.print(f"  ✓ Feishu: Background listener (Isolated Process) active / 飞书：后台监听子进程已激活")
 
     prompt = cfg.get("cli", {}).get("prompt", "🏠 > ")

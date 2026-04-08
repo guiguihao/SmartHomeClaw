@@ -82,7 +82,17 @@ memory:
 # Skills Config / 插件配置
 skills:
   feishu:
-    app_id_env: "FEISHU_APP_ID"        # Env var name for App ID / App ID 环境变量名
-    app_secret_env: "FEISHU_APP_SECRET" # Env var name for App Secret / App Secret 环境变量名
-    enable_listener: true              # Enable WebSocket listener / 开启长连接监听
-    auto_reply: true                   # AI auto reply / 开启 AI 自动回复关键词
+    enable_listener: true              # Global switch for WebSocket listener / 开启长连接监听 (全局开关)
+    auto_reply: true                   # AI auto reply / 开启 AI 自动回复关键词 (全局配置)
+
+    # Feishu Apps Configuration / 飞书应用配置
+    # You can define one or more bots here. Each requires its own credentials.
+    apps:
+      bot1:
+        app_id_env: "FEISHU_APP_ID"    # Env var name for Bot 1 App ID
+        app_secret_env: "FEISHU_APP_SECRET"
+        enable_listener: true          # Individual listener switch for Bot 1
+      bot2:
+        app_id_env: "FEISHU_APP_ID_1"  # Env var name for Bot 2 App ID
+        app_secret_env: "FEISHU_APP_SECRET_1"
+        enable_listener: true          # Individual listener switch for Bot 2

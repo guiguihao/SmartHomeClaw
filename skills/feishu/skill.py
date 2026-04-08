@@ -31,25 +31,45 @@ class FeishuSkill(BaseSkill):
         """
         self.config = config or {}
         
-        # Priority: app_id_env (env var name) > app_id (direct value) / 优先级：解析环境变量名 > 直接配置值
+        # 1. Resolve default (top-level) app credentials / 解析顶层默认凭证
         app_id_env = self.config.get("app_id_env")
         self.app_id = os.environ.get(app_id_env) if app_id_env else self.config.get("app_id")
         
         app_secret_env = self.config.get("app_secret_env")
         self.app_secret = os.environ.get(app_secret_env) if app_secret_env else self.config.get("app_secret")
         
-        if not self.app_id or not self.app_secret:
-            logger.warning("[Feishu] Missing app_id or app_secret in config/env / 凭证缺失")
-            self.client = None
-        else:
-            # 1. Initialize API Client (used for sending messages in main process) / 
+        self.client = None
+        if self.app_id and self.app_secret:
+            # Initialize default API Client (used for sending messages in main process) /
             # 初始化 API 客户端（用于主进程主动发消息）
             self.client = lark.Client.builder() \
                 .app_id(self.app_id) \
                 .app_secret(self.app_secret) \
                 .build()
+            logger.info("[Feishu] API Sender Client (default) initialized / 飞书发送客户端已就绪")
+        
+        # 2. Initialize containers for multiple apps / 初始化多应用容器
+        self._additional_clients: dict[str, Any] = {}
+        self.app_configs: dict[str, dict] = {}
+        
+        # Load extra Feishu app configurations if provided under 'apps' / 加载 apps 列表下的配置
+        extra_apps = self.config.get("apps", {})
+        for extra_name, extra_cfg in extra_apps.items():
+            # Resolve credentials for each extra app
+            extra_app_id = os.getenv(extra_cfg.get("app_id_env")) if extra_cfg.get("app_id_env") else extra_cfg.get("app_id")
+            extra_app_secret = os.getenv(extra_cfg.get("app_secret_env")) if extra_cfg.get("app_secret_env") else extra_cfg.get("app_secret")
             
-            logger.info("[Feishu] API Sender Client initialized / 飞书发送客户端已就绪")
+            if not extra_app_id or not extra_app_secret:
+                logger.warning(f"[Feishu:{extra_name}] Missing credentials, skipping.")
+                continue
+                
+            client = lark.Client.builder() \
+                .app_id(extra_app_id) \
+                .app_secret(extra_app_secret) \
+                .build()
+            self._additional_clients[extra_name] = client
+            self.app_configs[extra_name] = {"app_id": extra_app_id, "app_secret": extra_app_secret}
+            logger.info(f"[Feishu:{extra_name}] API client initialized.")
 
     @property
     def name(self) -> str:
@@ -61,40 +81,65 @@ class FeishuSkill(BaseSkill):
 
     def get_tools(self) -> list[dict]:
         """Define Feishu tools in OpenAI format / 定义飞书工具（OpenAI 格式）"""
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": "send_text_message",
-                    "description": "Send a text message to a user or group on Feishu. / 向飞书用户或群聊发送文本消息。",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "receive_id": {
-                                "type": "string", 
-                                "description": "The receiver's ID (Open ID, Union ID, Chat ID, or Email). / 接收者 ID (Open ID, Chat ID 等)"
-                            },
-                            "receive_id_type": {
-                                "type": "string", 
-                                "enum": ["open_id", "union_id", "chat_id", "email"],
-                                "default": "open_id",
-                                "description": "Type of receive_id. / 接收者 ID 类型"
-                            },
-                            "content": {
-                                "type": "string", 
-                                "description": "The text content of the message. / 消息文本内容"
-                            },
+        base_tool = {
+            "type": "function",
+            "function": {
+                "name": "send_text_message",
+                "description": "Send a text message to a user or group on Feishu. / 向飞书用户或群聊发送文本消息。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "receive_id": {
+                            "type": "string", 
+                            "description": "The receiver's ID (Open ID, Union ID, Chat ID, or Email). / 接收者 ID (Open ID, Chat ID 等)"
                         },
-                        "required": ["receive_id", "content"],
+                        "receive_id_type": {
+                            "type": "string", 
+                            "enum": ["open_id", "union_id", "chat_id", "email"],
+                            "default": "open_id",
+                            "description": "Type of receive_id. / 接收者 ID 类型"
+                        },
+                        "content": {
+                            "type": "string", 
+                            "description": "The text content of the message. / 消息文本内容"
+                        },
                     },
+                    "required": ["receive_id", "content"],
                 },
+            },
+        }
+        
+        # Add app_name if multiple apps are configured to allow targeting specific bots
+        if self._additional_clients:
+            base_tool["function"]["parameters"]["properties"]["app_name"] = {
+                "type": "string",
+                "description": "Optional: Which Feishu bot to use (app_name defined in config). / 可选：使用哪个飞书机器人",
+                "enum": list(self._additional_clients.keys()) + (["default"] if self.client else [])
             }
-        ]
+            
+        return [base_tool]
+
+    def _get_client(self, app_name: str | None = None):
+        """Select the appropriate Lark client: specified, default, or first available from apps."""
+        if app_name:
+            return self._additional_clients.get(app_name) or self.client
+        
+        # If no name provided, prefer the top-level 'default' client
+        if self.client:
+            return self.client
+            
+        # Fallback to the first available client in _additional_clients
+        if self._additional_clients:
+            return next(iter(self._additional_clients.values()))
+            
+        return None
 
     async def handle_tool_call(self, tool_name: str, args: dict) -> str:
         """Entry point for Feishu tool execution / 飞书工具执行入口"""
-        if not self.client:
-            return "❌ Feishu client not configured. Please check agent.yaml / 飞书客户端未配置，请检查配置文件。"
+        # Determine which client to use (default or specified app)
+        client = self._get_client(args.get("app_name"))
+        if not client:
+            return "❌ Feishu client not configured for the requested app. Please check agent.yaml."
 
         logger.info(f"[Feishu] Attempting tool: {tool_name} with args: {args}")
 
@@ -102,15 +147,18 @@ class FeishuSkill(BaseSkill):
             return await self._send_text_message(
                 receive_id=args["receive_id"],
                 content=args["content"],
-                receive_id_type=args.get("receive_id_type", "open_id")
+                receive_id_type=args.get("receive_id_type", "open_id"),
+                client=client,
             )
         
         return f"❌ Unknown tool / 未知工具：{tool_name}"
 
-    async def _send_text_message(self, receive_id: str, content: str, receive_id_type: str) -> str:
+    async def _send_text_message(self, receive_id: str, content: str, receive_id_type: str, client: Optional[lark.Client] = None) -> str:
         """
         Internal implementation of sending text message. / 发送文本消息的内部实现。
         """
+        # Use provided client or default
+        client = client or self.client
         # Create message content JSON / 构造消息内容 JSON
         msg_content = json.dumps({"text": content})
         
@@ -125,7 +173,7 @@ class FeishuSkill(BaseSkill):
             .build()
 
         # Send request asynchronously / 异步发送请求
-        response: lark.im.v1.CreateMessageResponse = await self.client.im.v1.message.acreate(request)
+        response: lark.im.v1.CreateMessageResponse = await client.im.v1.message.acreate(request)
 
         if not response.success():
             logger.error(f"[Feishu] API Error: {response.code} {response.msg}. LogID: {response.get_log_id()}")
@@ -140,11 +188,12 @@ class FeishuSkill(BaseSkill):
         except:
             pass
 
-    async def _add_reaction(self, message_id: str, emoji_type: str) -> None:
+    async def _add_reaction(self, message_id: str, emoji_type: str, client: Optional[lark.Client] = None) -> None:
         """
         Add an emoji reaction to a specific message / 给某个特定消息打表情表态
         """
-        if not self.client or not message_id:
+        client = client or self.client
+        if not client or not message_id:
             return
             
         try:
@@ -155,41 +204,46 @@ class FeishuSkill(BaseSkill):
                     .build()) \
                 .build()
             
-            resp = await self.client.im.v1.message_reaction.acreate(req)
+            resp = await client.im.v1.message_reaction.acreate(req)
             if not resp.success():
                 logger.error(f"[Feishu] Failed to add reaction '{emoji_type}': {resp.msg}. (Please ensure 'im:message.reaction:read' & 'im:message.reaction:write' permissions are enabled in Feishu Developer Console / 请确保飞书开放平台开启了应用表态权限)")
         except Exception as e:
             logger.error(f"[Feishu] Add reaction error: {e}")
 
-    async def _handle_ai_reply(self, receive_id: str, text: str, agent: Any, message_id: Optional[str] = None):
+    async def _handle_ai_reply(self, receive_id: str, text: str, agent: Any, message_id: Optional[str] = None, app_name: Optional[str] = None):
         """
         Isolated AI processing for Feishu messages. Triggered in main process via queue.
         针对飞书消息的独立 AI 处理逻辑。由主进程队列轮询器触发。
         """
         logger.info(f"🤖 [Feishu AI] Thinking for {receive_id}...")
+        # Select appropriate client based on app_name
+        client = self._get_client(app_name)
         
         # 像 OpenClaw 一样显示"正在思考/敲打键盘"的表情状态
         if message_id:
-            # 飞书官方常用思考、打字的表情类型：'THINKING' (思考), 'WIP' (搬砖) 
-            # 我们使用 'THINKING' 
-            await self._add_reaction(message_id, "THINKING")
+            await self._add_reaction(message_id, "THINKING", client=client)
             
         # 获取核心系统的基础提示词（包含记忆、角色、思维模式等）
         base_system = agent._build_system_prompt()
         
         # 叠加飞书渠道特有的交互约束
         feishu_constraints = """
-### 飞书交互规范 (Feishu Channel Rules)
-- **简洁性**：飞书是即时通讯工具，回复请尽量精炼，避免大段冗余信息。
-- **表情反馈**：你目前的思考和完成状态已通过消息表态（Reaction）反馈给用户，回复文本中无需重复说明“正在思考”等。
-- **排版**：使用清晰的换行或列表展示设备状态。
-"""
+        ### 飞书交互规范 (Feishu Channel Rules)
+        - **简洁性**：飞书是即时通讯工具，回复请尽量精炼，避免大段冗余信息。
+        - **表情反馈**：你目前的思考和完成状态已通过消息表态（Reaction）反馈给用户，回复文本中无需重复说明“正在思考”等。
+        - **排版**：使用清晰的换行或列表展示设备状态。
+        """
         full_system = f"{base_system}\n{feishu_constraints}"
+        
+        # Use a scoped session_id that includes the app_name to ensure 
+        # separate conversation histories for different bots.
+        # 使用包含 app_name 的 session_id，确保不同机器人的对话历史完全隔离。
+        scoped_session_id = f"{app_name}:{receive_id}" if app_name else receive_id
 
         # 使用 agent.chat 接口，并传入 session_id 以实现多轮对话上下文追踪
         response = await agent.chat(
             user_message=text,
-            session_id=receive_id,
+            session_id=scoped_session_id,
             system_override=full_system,
         )
         
@@ -197,36 +251,44 @@ class FeishuSkill(BaseSkill):
             await self._send_text_message(
                 receive_id=receive_id, 
                 content=response, 
-                receive_id_type="open_id"
+                receive_id_type="open_id",
+                client=client,
             )
             # 在发送完毕后再打一个 DONE 的表态
             if message_id:
-                await self._add_reaction(message_id, "DONE")
+                await self._add_reaction(message_id, "DONE", client=client)
 
-    def start_listener(self) -> multiprocessing.queues.Queue | None:
+    def start_listener(self) -> dict[str, multiprocessing.queues.Queue] | None:
         """
-        Start WS listener in an isolated process and return the IPC queue. / 
-        在独立的后台进程启动监听器，并返回 IPC 通信队列。
+        Start WS listeners (isolated processes) for each configured Feishu app that has listener enabled.
+        Returns a mapping of app_name -> queue.
         """
-        if not self.app_id or not self.app_secret:
+        # Determine which apps should start listeners
+        apps_to_start: dict[str, dict] = {}
+        # Default app (if configured)
+        if getattr(self, "app_id", None) and getattr(self, "app_secret", None):
+            apps_to_start["default"] = {"app_id": self.app_id, "app_secret": self.app_secret}
+        # Additional apps
+        for name, cfg in self._additional_clients.items():
+            cred = self.app_configs.get(name, {})
+            if cred.get("app_id") and cred.get("app_secret"):
+                apps_to_start[name] = {"app_id": cred["app_id"], "app_secret": cred["app_secret"]}
+        if not apps_to_start:
             return None
-            
-        logger.info("[Feishu] Spawning isolated listener process... / 正在孵化独立监听子进程...")
         
-        # Create cross-process queue / 创建跨进程队列
-        msg_queue = multiprocessing.Queue()
-        
-        # Spawn the isolated process using absolutely resolvable module path /
-        # 使用原生包路径结构引用执行函数，确保子进程能成功解析环境
         from skills.feishu.listener import run_process_listener
         
-        process = multiprocessing.Process(
-            target=run_process_listener,
-            args=(self.app_id, self.app_secret, msg_queue),
-            daemon=True
-        )
-        process.start()
-        
-        return msg_queue
+        queues: dict[str, multiprocessing.queues.Queue] = {}
+        for app_name, creds in apps_to_start.items():
+            msg_queue = multiprocessing.Queue()
+            process = multiprocessing.Process(
+                target=run_process_listener,
+                args=(app_name, creds["app_id"], creds["app_secret"], msg_queue),
+                daemon=True,
+            )
+            process.start()
+            queues[app_name] = msg_queue
+            logger.info(f"[Feishu:{app_name}] Listener process started.")
+        return queues
 
 

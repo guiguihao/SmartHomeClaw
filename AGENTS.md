@@ -22,7 +22,25 @@
 
 ## Skills
 - Each skill lives in `skills/<name>/` and must contain `skill.py` (implementation) and `SKILL.md` (doc).
-- Feishu skill requires env vars `FEISHU_APP_ID` and `FEISHU_APP_SECRET`; enable listener with `skills.feishu.enable_listener: true` in `config/agent.yaml`.
+- Feishu skill supports multiple apps. Configure under `skills.feishu` in `config/agent.yaml`:
+  - Single app (backwards compatible): `app_id_env`, `app_secret_env`, `enable_listener` (as before).
+  - Multiple apps: define an `apps` mapping, e.g.:
+
+    ```yaml
+    skills:
+      feishu:
+        apps:
+          bot1:
+            app_id_env: FEISHU_APP_ID_1
+            app_secret_env: FEISHU_APP_SECRET_1
+            enable_listener: true
+          bot2:
+            app_id: "your_app_id_2"
+            app_secret: "your_app_secret_2"
+            enable_listener: false
+    ```
+  - Use the optional `app_name` argument in Feishu tool calls (e.g., `send_text_message`) to target a specific bot.
+
 
 ## MCP servers
 - Defined in `config/agent.yaml` under `mcp_servers`. Each entry supplies a `command` (absolute path) to launch the MCP server process.

@@ -2,15 +2,17 @@ import json
 import traceback
 import multiprocessing.queues
 
-def run_process_listener(app_id: str, app_secret: str, msg_queue: multiprocessing.queues.Queue):
+def run_process_listener(app_name: str, app_id: str, app_secret: str, msg_queue: multiprocessing.queues.Queue):
     """
     Run the WebSocket listener in a completely isolated process environment.
-    This entirely prevents the "event loop is already running" and other 
-    concurrency issues caused by Lark OAPI's hard-coded global event loop design.
-    / 
-    在完全独立的进程环境中运行 WebSocket 监听器。
-    这从根本上避免了由飞书 SDK 全局事件循环设计导致的各种并发与超时问题。
     """
+    import os
+    # Aggressively clear ALL proxy environment variables before any network imports
+    # 在导入任何网络库之前，彻底清除所有代理相关的环境变量
+    for key in list(os.environ.keys()):
+        if key.lower() in ("http_proxy", "https_proxy", "all_proxy", "no_proxy", "ftp_proxy"):
+            del os.environ[key]
+
     import logging as _logging
     import ssl
     
@@ -72,7 +74,8 @@ def run_process_listener(app_id: str, app_secret: str, msg_queue: multiprocessin
             msg_queue.put({
                 "receive_id": sender_id,
                 "message_id": msg_id,
-                "text": text
+                "text": text,
+                "app_name": app_name,
             })
             
         event_handler = _lark.EventDispatcherHandler.builder("", "") \
