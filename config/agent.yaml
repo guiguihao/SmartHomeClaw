@@ -9,7 +9,7 @@ agent:
 # LLM Model Config (OpenAI compatible) / LLM 模型配置（支持任何 OpenAI 协议兼容模型）
 model:
   # Default model / 默认模型配置
-  default: "volcengine/Doubao-Seed-2.0-pro"
+  default: "volcengine/DeepSeek-V3.2"
   # Model list / 模型列表（可按需切换）
   providers:
     - name: "openai"

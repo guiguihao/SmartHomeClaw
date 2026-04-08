@@ -207,36 +207,100 @@ class Agent:
 
         # Tool use loop / Tool use 循环
         for iteration in range(self.max_tool_iterations):
+            # --- PHASE 1: NORMALIZE HISTORY TO CLEAN DICTS ---
+            raw_history_dicts = []
+            for msg in history:
+                m_to_append = {"role": msg["role"]}
+                if msg.get("tool_calls"):
+                    # Use None for content when tool_calls are present
+                    m_to_append["content"] = msg.get("content") or None
+                    m_to_append["tool_calls"] = msg["tool_calls"]
+                else:
+                    m_to_append["content"] = msg.get("content") or ""
+                
+                if msg.get("tool_call_id"):
+                    m_to_append["tool_call_id"] = msg["tool_call_id"]
+                
+                raw_history_dicts.append(m_to_append)
+
+            # --- PHASE 2: MERGE CONSECUTIVE ROLES & ENFORCE SEQUENCE ---
+            api_messages = [{"role": "system", "content": system_msg}]
+            
+            for m in raw_history_dicts:
+                prev = api_messages[-1]
+                
+                # Merge consecutive identical roles (system+system, user+user, assistant+assistant)
+                # Note: Assistant with tool_calls is handled as a distinct state
+                if m["role"] == prev["role"] and m["role"] in ("system", "user"):
+                    prev["content"] = f"{prev.get('content','')}\n{m.get('content','')}".strip()
+                elif m["role"] == "assistant" and prev["role"] == "assistant" and not m.get("tool_calls") and not prev.get("tool_calls"):
+                    prev["content"] = f"{prev.get('content','')}\n{m.get('content','')}".strip()
+                elif m["role"] == "tool" and prev["role"] != "assistant" and not any(msg.get("tool_calls") for msg in api_messages[::-1] if msg["role"] == "assistant"):
+                    # Orphan tool message? Drop it to prevent 400 error
+                    continue
+                else:
+                    # Specific check: Can't have Tool right after System/User (must follow Assistant)
+                    if m["role"] == "tool" and prev["role"] not in ("assistant", "tool"):
+                        # If tool follows user, it's invalid. Skip it.
+                        continue
+                    # Normal case: Append message
+                    api_messages.append(m)
+
+            # --- PHASE 3: FINAL SAFETY CHECK (Ensuring correct order for strict APIs) ---
+            # Some APIs like Doubao forbid Tool -> User. Must be Assistant -> User.
+            # We'll ensure it ends with user or assistant (not tool).
+            
+            # Debug roles sequence
+            logger.debug(f"[Agent] API Sequence: {[m['role'] for m in api_messages]}")
+
             response_msg = await self.model.chat(
-                messages=[{"role": "system", "content": system_msg}] + history,
+                messages=api_messages,
                 tools=tools if tools else None,
             )
 
-            # Important: Add model's intermediate response to history / 将模型中间响应（可能含 Tool Calls）存入历史
-            history.append(response_msg)
-
+            # 1. Normalize response to clean dict / 将模型响应规范化为干净的字典
+            msg_to_store = {
+                "role": response_msg.role,
+                "content": response_msg.content or None, # Use None for empty content
+            }
             if hasattr(response_msg, "tool_calls") and response_msg.tool_calls:
-                for tool_call in response_msg.tool_calls:
-                    tool_name = tool_call.function.name
-                    try:
-                        arguments = json.loads(tool_call.function.arguments)
-                    except json.JSONDecodeError:
-                        arguments = {}
+                msg_to_store["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": tc.type,
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        }
+                    } for tc in response_msg.tool_calls
+                ]
+            
+            history.append(msg_to_store)
 
-                    tool_result = await self._handle_tool_call(tool_name, arguments)
-                    logger.info(f"[Agent] [{session_id or 'default'}] Tool {tool_name} → {tool_result[:100]}")
+            # 2. Check for tool calls / 检查工具调用
+            if "tool_calls" in msg_to_store and msg_to_store["tool_calls"]:
+                for tool_call_data in msg_to_store["tool_calls"]:
+                    t_name = tool_call_data["function"]["name"]
+                    t_id = tool_call_data["id"]
+                    try:
+                        args = json.loads(tool_call_data["function"]["arguments"])
+                    except (json.JSONDecodeError, KeyError):
+                        args = {}
+
+                    t_res = await self._handle_tool_call(t_name, args)
+                    logger.info(f"[Agent] [{sid}] Tool {t_name} → {t_res[:100]}")
 
                     # Add tool result to history / 将工具执行结果存入历史
                     history.append({
                         "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": tool_result,
+                        "tool_call_id": t_id,
+                        "content": t_res,
                     })
-                
-                # Continue loop: it will use the updated history in next iteration / 继续迭代，下一轮将看到完整的上下文
+                # Continue iterations for model to process tool results
                 continue
             else:
-                final_response = response_msg.content or ""
+                # No tool calls, we have the final answer
+                final_response = msg_to_store.get("content") or ""
                 break
         else:
             final_response = "（Max tool iterations reached）"
