@@ -9,7 +9,7 @@ agent:
 # LLM Model Config (OpenAI compatible) / LLM 模型配置（支持任何 OpenAI 协议兼容模型）
 model:
   # Default model / 默认模型配置
-  default: "nvidia/openai/gpt-oss-120b"
+  default: "volcengine/Doubao-Seed-2.0-pro"
   # Model list / 模型列表（可按需切换）
   providers:
     - name: "openai"
@@ -29,6 +29,13 @@ model:
       api_key_env: "ANTHROPIC_API_KEY"
       models:
         - "claude-sonnet-4-5"
+    - name: "volcengine"
+      base_url: "https://ark.cn-beijing.volces.com/api/coding/v3"
+      api_key_env: "VOLCENGINE_API_KEY"
+      models:
+        - "Doubao-Seed-2.0-pro"
+        - "DeepSeek-V3.2"
+        - "MiniMax-M2.5"
     - name: "local"
       base_url: "http://localhost:11434/v1"
       api_key_env: "OLLAMA_API_KEY"  # Ollie doesn't validate keys
