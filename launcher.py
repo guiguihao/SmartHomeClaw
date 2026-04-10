@@ -52,8 +52,13 @@ def stop_services():
     pids = list(set(pids)) # Unique PIDs
     for pid in pids:
         try:
-            os.kill(pid, signal.SIGTERM)
-            print(f"  -> Terminated PID {pid}")
+            # Kill the entire process group (including children) for robust cleanup
+            try:
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+            except ProcessLookupError:
+                # If the group does not exist, fall back to killing the pid itself
+                os.kill(pid, signal.SIGTERM)
+            print(f"  -> Terminated PID {pid} (process group)")
         except ProcessLookupError:
             pass
         except Exception as e:
@@ -91,7 +96,8 @@ def start_services():
     if services.get("agent_core", {}).get("enabled"):
         cmd = services["agent_core"]["command"].split()
         print(f"  -> Starting agent_core: {' '.join(cmd)}")
-        p = subprocess.Popen(cmd)
+        # Start each service in its own process group so we can clean up child processes later
+        p = subprocess.Popen(cmd, preexec_fn=os.setsid)
         processes.append(("agent_core", p))
         time.sleep(2) 
         
@@ -101,7 +107,7 @@ def start_services():
         if svc.get("enabled"):
             cmd = svc["command"].split()
             print(f"  -> Starting {name}: {' '.join(cmd)}")
-            p = subprocess.Popen(cmd)
+            p = subprocess.Popen(cmd, preexec_fn=os.setsid)
             processes.append((name, p))
 
     if not processes:
@@ -139,9 +145,6 @@ def main():
         start_services()
     else:
         print("Usage: python launcher.py [start|stop|restart]")
-
-if __name__ == "__main__":
-    main()
 
 if __name__ == "__main__":
     main()
