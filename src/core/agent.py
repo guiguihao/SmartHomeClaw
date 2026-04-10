@@ -304,10 +304,6 @@ class Agent:
         else:
             final_response = "（达到最大工具调用循环限制）"
         
-        # 将最终回复加入历史
-        if final_response:
-            history.append({"role": "assistant", "content": final_response})
-
         # 5. 每一轮对话结束，将最新历史同步保存到磁盘
         self._save_session_to_disk(sid, history)
 
