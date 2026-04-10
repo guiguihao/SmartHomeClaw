@@ -133,12 +133,16 @@ async def run_serve():
             task_file=str(ROOT / hb_cfg.get("task_file", "config/HEARTBEAT.md")),
         )
         await heartbeat.start()
+        # 将心跳调度器注入 Agent
+        agent.set_heartbeat(heartbeat)
         console.print(f"  ✓ Heartbeat: every {hb_cfg.get('interval_minutes', 5)} min")
 
     # Start Cron / 启动Cron
     from src.core.cron import CronScheduler
     cron = CronScheduler(agent=agent)
     await cron.start()
+    # 将定时调度器注入 Agent
+    agent.set_cron(cron)
     console.print(f"  ✓ Cron: Scheduler started")
 
     console.print("\n[bold green]一切后台服务已启动，按 Ctrl+C 来停止...[/bold green]")
@@ -182,12 +186,16 @@ async def run_chat():
             task_file=str(ROOT / hb_cfg.get("task_file", "config/HEARTBEAT.md")),
         )
         await heartbeat.start()
+        # 将心跳调度器注入 Agent，使其可通过对话操作心跳配置
+        agent.set_heartbeat(heartbeat)
         console.print(f"\n  ✓ Heartbeat: every {hb_cfg.get('interval_minutes', 5)} min / 心跳：每 5 分钟自检一次")
 
     # Start Cron Scheduler / 启动定时任务（Cron）
     from src.core.cron import CronScheduler
     cron = CronScheduler(agent=agent)
     await cron.start()
+    # 将定时调度器注入 Agent，使其可通过对话管理定时任务
+    agent.set_cron(cron)
     console.print(f"  ✓ Cron: Scheduler started / APScheduler 已启动")
 
     prompt = cfg.get("cli", {}).get("prompt", "🏠 > ")

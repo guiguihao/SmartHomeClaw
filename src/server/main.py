@@ -50,11 +50,15 @@ async def lifespan(app: FastAPI):
             task_file=str(ROOT / hb_cfg.get("task_file", "config/HEARTBEAT.md")),
         )
         await heartbeat_instance.start()
+        # 将心跳调度器注入 Agent，使其可通过工具调用读写心跳指令
+        agent_instance.set_heartbeat(heartbeat_instance)
 
     # 启动定时任务 (Cron)
     from src.core.cron import CronScheduler
     cron_instance = CronScheduler(agent=agent_instance)
     await cron_instance.start()
+    # 将定时调度器注入 Agent，使其可通过工具调用管理定时任务
+    agent_instance.set_cron(cron_instance)
     
     print("🚀 Agent 核心服务器已启动并运行。")
     

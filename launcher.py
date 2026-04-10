@@ -7,6 +7,10 @@ import subprocess
 import yaml
 import sys
 import os
+
+# 彻底禁用 __pycache__ 生成（对当前进程及所有子进程生效）
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+
 import time
 import socket
 import signal
@@ -92,22 +96,29 @@ def start_services():
     # Ensure logs dir exists
     (ROOT / "logs").mkdir(exist_ok=True)
 
-    # 1. Start agent_core first
+    # 1. 首先启动 agent_core
     if services.get("agent_core", {}).get("enabled"):
-        cmd = services["agent_core"]["command"].split()
-        print(f"  -> Starting agent_core: {' '.join(cmd)}")
-        # Start each service in its own process group so we can clean up child processes later
-        p = subprocess.Popen(cmd, preexec_fn=os.setsid)
+        cmd_parts = services["agent_core"]["command"].split()
+        # 兼容性修复：将 'python' 替换为当前系统的 Python 解释器路径
+        if cmd_parts[0] == "python":
+            cmd_parts[0] = sys.executable
+            
+        print(f"  -> Starting agent_core: {' '.join(cmd_parts)}")
+        p = subprocess.Popen(cmd_parts, preexec_fn=os.setsid)
         processes.append(("agent_core", p))
         time.sleep(2) 
         
-    # 2. Start other services
+    # 2. 启动其他服务
     for name, svc in services.items():
         if name == "agent_core": continue
         if svc.get("enabled"):
-            cmd = svc["command"].split()
-            print(f"  -> Starting {name}: {' '.join(cmd)}")
-            p = subprocess.Popen(cmd, preexec_fn=os.setsid)
+            cmd_parts = svc["command"].split()
+            # 兼容性修复：将 'python' 替换为当前系统的 Python 解释器路径
+            if cmd_parts[0] == "python":
+                cmd_parts[0] = sys.executable
+                
+            print(f"  -> Starting {name}: {' '.join(cmd_parts)}")
+            p = subprocess.Popen(cmd_parts, preexec_fn=os.setsid)
             processes.append((name, p))
 
     if not processes:

@@ -4,3 +4,9 @@
   enabled: true
   id: morning_routine
   name: 晨间模式
+- created_at: '2026-04-10T15:12:55.329152'
+  cron: 0 23 * * *
+  description: 每天晚上23点关闭所有温控器和灯光设备。具体指令：请检查并关闭设备1003、1004、1005的开关
+  enabled: true
+  id: night_lights_off
+  name: 夜间关闭所有设备
