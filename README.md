@@ -41,14 +41,13 @@ model:
 # Activate virtual environment
 source .venv/bin/activate
 
-# Show all available commands
-python main.py
+# Option A: Manage microservices (Agent API + Gateways)
+python launcher.py start    # Start all services
+python launcher.py stop     # Stop all services
+python launcher.py restart  # Reboot all services
 
-# Enter interactive chat mode
+# Option B: Interactive CLI chat mode (local test)
 python main.py chat
-
-# Start backend services only (Feishu listener + Heartbeat + Cron, no CLI)
-python main.py serve
 ```
 
 ---
@@ -57,14 +56,12 @@ python main.py serve
 
 | Command | Description |
 |---------|-------------|
-| `python main.py` | Show help menu |
+| `python launcher.py start` | Starts microservices based on `config/services.yaml` |
+| `python launcher.py stop` | Stops all running services cleanly |
+| `python launcher.py restart`| Restarts the entire service cluster |
 | `python main.py chat` | Interactive CLI chat mode |
-| `python main.py serve` | Backend-only mode (ideal for production / always-on) |
 
-> **Tip**: Use `serve` mode with `nohup` to run persistently in the background:
-> ```bash
-> nohup .venv/bin/python main.py serve &
-> ```
+> **Tip**: Use `launcher.py` for persistent background execution. It includes port-conflict protection.
 
 ---
 
@@ -224,14 +221,13 @@ model:
 # 激活虚拟环境
 source .venv/bin/activate
 
-# 查看所有可用命令（默认行为）
-python main.py
+# 方案 A：管理微服务（Agent API + 飞书网关等）
+python launcher.py start    # 启动所有服务
+python launcher.py stop     # 停止所有服务
+python launcher.py restart  # 重启所有服务
 
-# 进入对话模式
+# 方案 B：进入对话模式（仅 CLI 终端测试）
 python main.py chat
-
-# 仅启动后台服务（飞书监听 + 心跳 + Cron，无 CLI 对话）
-python main.py serve
 ```
 
 ---
@@ -240,14 +236,12 @@ python main.py serve
 
 | 命令 | 描述 |
 |------|------|
-| `python main.py` | 显示帮助菜单 |
+| `python launcher.py start` | 根据 `config/services.yaml` 启动所有后台微服务 |
+| `python launcher.py stop` | 优雅停止所有正在运行的服务 |
+| `python launcher.py restart`| 重启整个服务集群 |
 | `python main.py chat` | 进入交互式 CLI 对话模式 |
-| `python main.py serve` | 仅运行后台服务（适合生产环境/常驻后台） |
 
-> **提示**：使用 `serve` 模式配合 `nohup` 可实现持久后台运行：
-> ```bash
-> nohup .venv/bin/python main.py serve &
-> ```
+> **提示**：后台常驻运行推荐使用 `python launcher.py start`。该工具内置了端口冲突保护。
 
 ---
 

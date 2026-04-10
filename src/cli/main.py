@@ -98,41 +98,6 @@ def cli():
     pass  # 不默认进入任何模式，显示帮助信息 / Show help by default
 
 
-import queue as builtin_queue
-import multiprocessing.queues
-from typing import Any
-
-async def _feishu_queue_watcher(queue: multiprocessing.queues.Queue, agent: Any, feishu_skill: Any):
-    """
-    Background watcher to continuously poll the multiprocessing IPC queue 
-    for messages coming from the isolated Feishu WebSocket process.
-    / 
-    后台轮询器，持续检查是否有来自飞书独立进程传来的 WebSocket 消息。
-    """
-    while True:
-        try:
-            # Check queue non-blocking to yield back to event loop / 非阻塞检查
-            try:
-                msg = queue.get_nowait()
-                # If we get here, we have a message! Dispatch it to the AI.
-                receive_id = msg.get("receive_id")
-                message_id = msg.get("message_id")
-                text = msg.get("text")
-                app_name = msg.get("app_name")
-                if receive_id and text:
-                    # Dispatch to isolated handler / 派发到处理函数
-                    import asyncio
-                    asyncio.create_task(feishu_skill._handle_ai_reply(receive_id, text, agent, message_id, app_name=app_name))
-            except builtin_queue.Empty:
-                import asyncio
-                # No data, sleep and yield / 没有数据，休眠并让出事件循环
-                await asyncio.sleep(0.5)
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            import asyncio
-            await asyncio.sleep(1) # Prevent tight crash loops
-
 @cli.command("chat")
 def chat_cmd():
     """Enter interactive chat mode / 进入对话模式"""
@@ -175,15 +140,6 @@ async def run_serve():
     cron = CronScheduler(agent=agent)
     await cron.start()
     console.print(f"  ✓ Cron: Scheduler started")
-
-    # Start Feishu listener / 启动飞书监听
-    feishu_skill = agent.skills.get_skill("feishu")
-    if feishu_skill and cfg.get("skills", {}).get("feishu", {}).get("enable_listener"):
-        queues = feishu_skill.start_listener()
-        if queues:
-            for app_name, q in queues.items():
-                asyncio.create_task(_feishu_queue_watcher(q, agent, feishu_skill))
-        console.print(f"  ✓ Feishu: Background listener (Isolated Process) active")
 
     console.print("\n[bold green]一切后台服务已启动，按 Ctrl+C 来停止...[/bold green]")
 
@@ -233,15 +189,6 @@ async def run_chat():
     cron = CronScheduler(agent=agent)
     await cron.start()
     console.print(f"  ✓ Cron: Scheduler started / APScheduler 已启动")
-
-    # 4.1 Start Feishu listener if configured / 启动飞书后台监听器（如果在加载的插件中存在）
-    feishu_skill = agent.skills.get_skill("feishu")
-    if feishu_skill and cfg.get("skills", {}).get("feishu", {}).get("enable_listener"):
-        queues = feishu_skill.start_listener()
-        if queues:
-            for app_name, q in queues.items():
-                asyncio.create_task(_feishu_queue_watcher(q, agent, feishu_skill))
-        console.print(f"  ✓ Feishu: Background listener (Isolated Process) active / 飞书：后台监听子进程已激活")
 
     prompt = cfg.get("cli", {}).get("prompt", "🏠 > ")
 

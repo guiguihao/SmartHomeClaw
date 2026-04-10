@@ -7,70 +7,29 @@
 <a name="english"></a>
 ## English Description
 
-This plugin allows the SmartHome Agent to interact with the Feishu (Lark) Open Platform. It supports sending text messages and **real-time message listening** via WebSocket (Long Connection).
+This plugin provides the SmartHome Agent with the ability to **proactively send messages** to Feishu (Lark). It is used by the Agent to notify users about device status, alerts, or scheduled task completions.
+
+**Note:** Real-time message listening is now handled by the standalone `Feishu Gateway` service (`services/feishu/`).
 
 ### Features
-- **Send Messages**: Proactively send alerts or status updates.
-- **Real-time Listening**: Receive events from Lark without a public IP (WebSocket).
-- **AI Auto-Reply**: Automatically process and reply to incoming messages using independent AI reasoning.
+- **Send Messages**: Proactively send text messages to users or groups.
+- **Multi-Bot Support**: Can target different bots configured in `agent.yaml`.
 
-### Setup Instructions
-
-1.  **Create App**: Log in to the [Lark Open Platform](https://open.feishu.cn/), create an "Internal App".
-2.  **Enable Features**: Enable "Bot" in "App Capabilities".
-3.  **Permissions**: Grant:
-    - `im:message:send_as_bot` (Send messages)
-    - `im:message` (Read messages)
-4.  **Event Subscription (Crucial)**:
-    - Go to **Events & Callbacks** -> **Event Configuration**.
-    - Select **"Receive events through persistent connection"**.
-    - Add event: `p2.im.message.receive_v1` (Receive messages).
-5.  **Config**: Update `config/agent.yaml`.
-
-### Configuration (`agent.yaml`)
-```yaml
-skills:
-  feishu:
-    app_id_env: "FEISHU_APP_ID"
-    app_secret_env: "FEISHU_APP_SECRET"
-    enable_listener: true   # Enable background listening
-    auto_reply: true        # Enable AI response
-```
+### Provided Tools
+- `send_text_message`: Send a text message to a receiver ID.
 
 ---
 
 <a name="中文"></a>
 ## 中文说明
 
-该插件使 SmartHome Agent 支持通过飞书进行消息交互，现已升级支持 **长连接实时监听**。
+该插件为 SmartHome Agent 提供了**主动发送飞书消息**的能力。Agent 可以利用此工具向用户推送设备状态、警报信息或定时任务执行结果。
+
+**注意：** 实时消息监听功能已移至独立的 `飞书网关 (Feishu Gateway)` 服务 (`services/feishu/`)。
 
 ### 功能特性
-- **主动发送**：向指定用户或群聊推送消息。
-- **实时接收**：无需公网 IP，通过 WebSocket 接收飞书机器人消息。
-- **AI 自动回复**：收到消息后，Agent 会在后台独立思考并自动回复。
-
-### 接入指南
-
-1.  **创建应用**：登录 [飞书开放平台](https://open.feishu.cn/)，创建“企业自建应用”。
-2.  **启用机器人**：在“应用能力”中开启“机器人”功能。
-3.  **权限配置**：在“权限管理”中勾选：
-    - `im:message:send_as_bot` (发送消息)
-    - `im:message` (接收消息内容)
-4.  **事件订阅（核心步骤）**：
-    - 进入“事件订阅”页面。
-    - **订阅方式** 切换为 **“通过长连接接收事件”** (WebSocket)。
-    - **添加事件**：搜索并添加 `接收消息` (v1.0)。
-5.  **本地配置**：修改 `config/agent.yaml` 并确保 `.env` 中填入了凭证。
-
-### 配置文件示例 (`config/agent.yaml`)
-```yaml
-skills:
-  feishu:
-    app_id_env: "FEISHU_APP_ID"        # 环境变量引用模式
-    app_secret_env: "FEISHU_APP_SECRET"
-    enable_listener: true              # 开启后台实时监听
-    auto_reply: true                   # 开启 AI 自动回信
-```
+- **主动发送**：向指定用户或群聊推送文本消息。
+- **多机器人支持**：支持根据配置选择不同的机器人发送消息。
 
 ### 提供的工具
-- `send_text_message`: 主动发送消息。
+- `send_text_message`: 向指定的接收者 ID 发送文本消息。

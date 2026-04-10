@@ -82,6 +82,7 @@ memory:
 # Skills Config / 插件配置
 skills:
   feishu:
+    # Service Settings (Used by services/feishu/main.py) / 服务端设置（供 services/feishu 使用）
     enable_listener: true              # Global switch for WebSocket listener / 开启长连接监听 (全局开关)
     auto_reply: true                   # AI auto reply / 开启 AI 自动回复关键词 (全局配置)
 

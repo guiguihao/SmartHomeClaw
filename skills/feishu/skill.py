@@ -7,8 +7,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import multiprocessing
-import multiprocessing.queues
 from typing import Any, Optional
 
 import lark_oapi as lark
@@ -179,116 +177,6 @@ class FeishuSkill(BaseSkill):
             logger.error(f"[Feishu] API Error: {response.code} {response.msg}. LogID: {response.get_log_id()}")
             return f"❌ Feishu API Error: {response.msg} (Code: {response.code})"
         
-        msg_id_info = "N/A"
-        try:
-            msg_id_info = json.loads(response.data.content).get("message_id", "N/A") if hasattr(response.data, 'content') else "N/A"
-            # Some versions use response.data.message_id
-            if hasattr(response.data, 'message_id'):
-                msg_id_info = response.data.message_id
-        except:
-            pass
-
-    async def _add_reaction(self, message_id: str, emoji_type: str, client: Optional[lark.Client] = None) -> None:
-        """
-        Add an emoji reaction to a specific message / 给某个特定消息打表情表态
-        """
-        client = client or self.client
-        if not client or not message_id:
-            return
-            
-        try:
-            req = lark.im.v1.CreateMessageReactionRequest.builder() \
-                .message_id(message_id) \
-                .request_body(lark.im.v1.CreateMessageReactionRequestBody.builder()
-                    .reaction_type(lark.im.v1.Emoji.builder().emoji_type(emoji_type).build())
-                    .build()) \
-                .build()
-            
-            resp = await client.im.v1.message_reaction.acreate(req)
-            if not resp.success():
-                logger.error(f"[Feishu] Failed to add reaction '{emoji_type}': {resp.msg}. (Please ensure 'im:message.reaction:read' & 'im:message.reaction:write' permissions are enabled in Feishu Developer Console / 请确保飞书开放平台开启了应用表态权限)")
-        except Exception as e:
-            logger.error(f"[Feishu] Add reaction error: {e}")
-
-    async def _handle_ai_reply(self, receive_id: str, text: str, agent: Any, message_id: Optional[str] = None, app_name: Optional[str] = None):
-        """
-        Isolated AI processing for Feishu messages. Triggered in main process via queue.
-        针对飞书消息的独立 AI 处理逻辑。由主进程队列轮询器触发。
-        """
-        logger.info(f"🤖 [Feishu AI] Thinking for {receive_id}...")
-        # Select appropriate client based on app_name
-        client = self._get_client(app_name)
-        
-        # 像 OpenClaw 一样显示"正在思考/敲打键盘"的表情状态
-        if message_id:
-            await self._add_reaction(message_id, "THINKING", client=client)
-            
-        # 获取核心系统的基础提示词（包含记忆、角色、思维模式等）
-        base_system = agent._build_system_prompt()
-        
-        # 叠加飞书渠道特有的交互约束
-        feishu_constraints = """
-        ### 飞书交互规范 (Feishu Channel Rules)
-        - **简洁性**：飞书是即时通讯工具，回复请尽量精炼，避免大段冗余信息。
-        - **表情反馈**：你目前的思考和完成状态已通过消息表态（Reaction）反馈给用户，回复文本中无需重复说明“正在思考”等。
-        - **排版**：使用清晰的换行或列表展示设备状态。
-        """
-        full_system = f"{base_system}\n{feishu_constraints}"
-        
-        # Use a scoped session_id that includes the app_name to ensure 
-        # separate conversation histories for different bots.
-        # 使用包含 app_name 的 session_id，确保不同机器人的对话历史完全隔离。
-        scoped_session_id = f"{app_name}:{receive_id}" if app_name else receive_id
-
-        # 使用 agent.chat 接口，并传入 session_id 以实现多轮对话上下文追踪
-        response = await agent.chat(
-            user_message=text,
-            session_id=scoped_session_id,
-            system_override=full_system,
-        )
-        
-        if response:
-            await self._send_text_message(
-                receive_id=receive_id, 
-                content=response, 
-                receive_id_type="open_id",
-                client=client,
-            )
-            # 在发送完毕后再打一个 DONE 的表态
-            if message_id:
-                await self._add_reaction(message_id, "DONE", client=client)
-
-    def start_listener(self) -> dict[str, multiprocessing.queues.Queue] | None:
-        """
-        Start WS listeners (isolated processes) for each configured Feishu app that has listener enabled.
-        Returns a mapping of app_name -> queue.
-        """
-        # Determine which apps should start listeners
-        apps_to_start: dict[str, dict] = {}
-        # Default app (if configured)
-        if getattr(self, "app_id", None) and getattr(self, "app_secret", None):
-            apps_to_start["default"] = {"app_id": self.app_id, "app_secret": self.app_secret}
-        # Additional apps
-        for name, cfg in self._additional_clients.items():
-            cred = self.app_configs.get(name, {})
-            if cred.get("app_id") and cred.get("app_secret"):
-                apps_to_start[name] = {"app_id": cred["app_id"], "app_secret": cred["app_secret"]}
-        if not apps_to_start:
-            return None
-        
-        from skills.feishu.listener import run_process_listener
-        
-        queues: dict[str, multiprocessing.queues.Queue] = {}
-        for app_name, creds in apps_to_start.items():
-            msg_queue = multiprocessing.Queue()
-            process = multiprocessing.Process(
-                target=run_process_listener,
-                args=(app_name, creds["app_id"], creds["app_secret"], msg_queue),
-                daemon=True,
-            )
-            process.start()
-            queues[app_name] = msg_queue
-            logger.info(f"[Feishu:{app_name}] Listener process started.")
-        return queues
+        return "✅ Message sent successfully"
 
 

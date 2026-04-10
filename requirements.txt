@@ -28,3 +28,6 @@ pydantic>=2.6.0
 lark-oapi>=1.1.0
 nest_asyncio>=1.6.0
 python-socks>=2.0.0      # Required for SOCKS proxy support in Feishu listener
+fastapi
+uvicorn
+requests

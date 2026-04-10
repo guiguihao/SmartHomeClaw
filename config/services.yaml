@@ -1,0 +1,13 @@
+# Services Configuration
+# 定义哪些服务需要由 Launcher 启动
+
+services:
+  agent_core:
+    description: "Main Agent API Server (FastAPI)"
+    command: "python -m src.server.main"
+    enabled: true
+  
+  feishu_gateway:
+    description: "Feishu WebSocket Gateway"
+    command: "python -m services.feishu.main"
+    enabled: true

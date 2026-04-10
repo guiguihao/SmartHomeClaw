@@ -1,50 +1,41 @@
 # AGENTS.md
 
-## Setup
-- `cp .env.example .env && edit` to add required API keys (`OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `VOLCENGINE_API_KEY`, `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, etc.).
-- Install dependencies: `pip install -r requirements.txt`.
-- Activate virtual environment before any command: `source .venv/bin/activate`.
+## Setup & Environment
+- **Root Path:** Always run commands from the repository root `/Volumes/sandiskSSD/Project/xuexi/ureal_agent`.
+- **Venv:** Use `source .venv/bin/activate`. Avoid system Python.
+- **Deps:** `pip install -r requirements.txt`.
+- **Secrets:** `cp .env.example .env`. Required keys: `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `VOLCENGINE_API_KEY`, `FEISHU_APP_ID`, `FEISHU_APP_SECRET`.
 
-## Core commands (run from repository root)
-- `python main.py` – show help/available CLI commands.
-- `python main.py chat` – start interactive chat mode.
-- `python main.py serve` – start backend services only (Feishu listener, heartbeat, cron). Use `nohup .venv/bin/python main.py serve &` for persistent background run.
+## Core Commands
+- `python main.py chat` – Interactive CLI mode (includes background heartbeat/cron).
+- `python launcher.py` – Starts all background microservices (Agent API, Feishu Gateway) driven by `config/services.yaml`. Use `nohup` for persistence.
+- `pytest tests/test_feishu_direct.py -v` – Run specific test.
 
-## Testing
-- Run a single test: `python -m pytest tests/test_feishu_direct.py -v`.
+## Microservices Architecture
+- The system is decoupled. `src/server/main.py` is a FastAPI server (`http://127.0.0.1:8000/v1/chat`).
+- Feishu WebSocket listener is an independent gateway (`services/feishu/main.py`) that proxies messages to the API.
+- Use `python launcher.py` to orchestrate booting them up.
 
-## Configuration
-- Main config file: `config/agent.yaml`. Default model set under `model.default`; model list under `model.providers`.
-- Log file path: `logs/agent.log`. Log level can be overridden via `LOG_LEVEL` in `.env`.
-- Heartbeat task description: `config/HEARTBEAT.md`.
-- Cron schedule file: `config/crons.yaml` (also manageable via `/cron` slash commands).
-- Memory files (auto‑saved): `memory/USER_PROFILE.md`, `memory/HABITS.md`, `memory/FACTS.md`.
+## Key Configurations
+- **Main Config:** `config/agent.yaml`. Defines model defaults, MCP servers, and skill settings.
+- **Services Config:** `config/services.yaml`. Toggles which gateways/servers run via `launcher.py`.
+- **Model Switching:** Use `/model <name>` in chat. Providers are listed in `config/agent.yaml`.
+- **Cron:** Managed via `/cron` commands; saved to `config/crons.yaml`.
+- **Heartbeat:** Runs every 5 min (configurable) using instructions in `config/HEARTBEAT.md`.
+- **Memory:** Auto-saved to `memory/` (`USER_PROFILE.md`, `HABITS.md`, `FACTS.md`).
 
-## Skills
-- Each skill lives in `skills/<name>/` and must contain `skill.py` (implementation) and `SKILL.md` (doc).
-- Feishu skill supports multiple apps. Configure under `skills.feishu` in `config/agent.yaml`:
-  - Single app (backwards compatible): `app_id_env`, `app_secret_env`, `enable_listener` (as before).
-  - Multiple apps: define an `apps` mapping, e.g.:
+## Skill System
+- **Path:** `skills/<name>/`. Must contain `skill.py` (BaseSkill subclass) and `SKILL.md`.
+- **Feishu Bot:** Supports multiple bots under `skills.feishu.apps` in `agent.yaml`.
+  - Use `app_id_env` for env var names or `app_id` for direct values.
+  - Listener runs in an isolated process via `multiprocessing`.
+  - Tool `send_text_message` accepts optional `app_name` to select bot.
 
-    ```yaml
-    skills:
-      feishu:
-        apps:
-          bot1:
-            app_id_env: FEISHU_APP_ID_1
-            app_secret_env: FEISHU_APP_SECRET_1
-            enable_listener: true
-          bot2:
-            app_id: "your_app_id_2"
-            app_secret: "your_app_secret_2"
-            enable_listener: false
-    ```
-  - Use the optional `app_name` argument in Feishu tool calls (e.g., `send_text_message`) to target a specific bot.
+## MCP Servers
+- Configured in `agent.yaml` under `mcp_servers` using `stdio` transport.
+- Requires absolute paths for the `command` field.
 
-
-## MCP servers
-- Defined in `config/agent.yaml` under `mcp_servers`. Each entry supplies a `command` (absolute path) to launch the MCP server process.
-
-## Runtime notes
-- CLI code changes working directory to the repo root (`os.chdir(ROOT)`). Run commands from the repository root or they will fail to locate config files.
-- The `python` executable used after activating the venv points to the venv’s interpreter; avoid using system Python.
+## Critical Quirks
+- **Working Directory:** The CLI explicitly calls `os.chdir(ROOT)`. Relative paths in config files are relative to the repo root.
+- **Logging:** Logs rotate daily at `logs/agent.log`. Console shows `WARNING`+ unless `LOG_LEVEL=DEBUG`.
+- **Session Isolation:** Feishu conversations are isolated by `app_name:receive_id` in `FeishuSkill._handle_ai_reply`.
