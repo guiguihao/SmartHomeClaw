@@ -243,6 +243,7 @@ python main.py chat
 
 > **提示**：后台常驻运行推荐使用 `python launcher.py start`。该工具内置了端口冲突保护。
 
+nohup python launcher.py > logs/serve.out 2>&1 &
 ---
 
 ### 对话模式内置命令（`/` 斜杠命令）

@@ -52,22 +52,39 @@ def stop_services():
                     pids.append(int(line.strip()))
                 except ValueError:
                     continue
-    
-    pids = list(set(pids)) # Unique PIDs
-    for pid in pids:
+    # 1. 首先尝试通过 PID 文件优雅停止
+    if PID_FILE.exists():
         try:
-            # Kill the entire process group (including children) for robust cleanup
-            try:
-                os.killpg(os.getpgid(pid), signal.SIGTERM)
-            except ProcessLookupError:
-                # If the group does not exist, fall back to killing the pid itself
-                os.kill(pid, signal.SIGTERM)
-            print(f"  -> Terminated PID {pid} (process group)")
-        except ProcessLookupError:
+            with open(PID_FILE, "r") as f:
+                pids = f.read().splitlines()
+            for pid in pids:
+                try:
+                    # 尝试杀掉整个进程组
+                    os.killpg(int(pid), signal.SIGTERM)
+                    print(f"  -> Sent SIGTERM to process group {pid}")
+                except ProcessLookupError:
+                    pass
+                except Exception as e:
+                    print(f"  -> Error stopping {pid}: {e}")
+            PID_FILE.unlink()
+        except Exception:
             pass
-        except Exception as e:
-            print(f"  -> Failed to kill {pid}: {e}")
-            
+
+    # 2. 强力清理模式：根据进程特征词进行二次清理，防止残留
+    # 搜索包含模块路径的关键进程名
+    keywords = ["src.server.main", "services.feishu.main", "launcher.py start"]
+    
+    import subprocess
+    try:
+        # 给 2 秒缓冲时间让 SIGTERM 生效
+        time.sleep(1.5)
+        for kw in keywords:
+            # 使用 pkill -9 强制清理所有符合特征的 Python 进程
+            # -f 表示匹配完整的命令行
+            subprocess.run(["pkill", "-9", "-f", kw], stderr=subprocess.DEVNULL)
+        print("  -> Cleanup complete (Forcefully killed residuals).")
+    except Exception:
+        pass
     if PID_FILE.exists():
         PID_FILE.unlink()
     
@@ -96,6 +113,9 @@ def start_services():
     # Ensure logs dir exists
     (ROOT / "logs").mkdir(exist_ok=True)
 
+    # 所有服务的输出都重定向到这个文件
+    log_file = open(ROOT / "logs" / "serve.out", "a", encoding="utf-8")
+
     # 1. 首先启动 agent_core
     if services.get("agent_core", {}).get("enabled"):
         cmd_parts = services["agent_core"]["command"].split()
@@ -104,7 +124,7 @@ def start_services():
             cmd_parts[0] = sys.executable
             
         print(f"  -> Starting agent_core: {' '.join(cmd_parts)}")
-        p = subprocess.Popen(cmd_parts, preexec_fn=os.setsid)
+        p = subprocess.Popen(cmd_parts, preexec_fn=os.setsid, stdout=log_file, stderr=log_file)
         processes.append(("agent_core", p))
         time.sleep(2) 
         
@@ -118,7 +138,7 @@ def start_services():
                 cmd_parts[0] = sys.executable
                 
             print(f"  -> Starting {name}: {' '.join(cmd_parts)}")
-            p = subprocess.Popen(cmd_parts, preexec_fn=os.setsid)
+            p = subprocess.Popen(cmd_parts, preexec_fn=os.setsid, stdout=log_file, stderr=log_file)
             processes.append((name, p))
 
     if not processes:
