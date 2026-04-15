@@ -1,0 +1,24 @@
+# SmartHomeClaw Agent 基础配置
+
+agent:
+  name: "SmartHomeClaw"
+  version: "1.0.0"
+  
+# Qwen Code 无头模式配置
+qwen:
+  output_format: "json"
+  yolo: true
+  approval_mode: "auto_edit"
+  
+# MCP Server 配置
+mcp:
+  # MCP Server 存放目录
+  directory: "./mcp"
+  timeout: 60000
+  
+# 记忆系统配置
+memory:
+  directory: "./memory"
+  user_profile: "USER_PROFILE.md"
+  habits: "HABITS.md"
+  facts: "FACTS.md"

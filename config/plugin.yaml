@@ -1,0 +1,19 @@
+# 插件配置
+
+plugins:
+  # 飞书插件
+  feishu:
+    enabled: true
+    app_id: "${FEISHU_APP_ID}"
+    app_secret: "${FEISHU_APP_SECRET}"
+    enable_listener: true
+    auto_reply: true
+    
+  # 其他插件示例:
+  # wechat:
+  #   enabled: false
+  #   token: "${WECHAT_TOKEN}"
+  
+  # dingtalk:
+  #   enabled: false
+  #   webhook: "${DINGTALK_WEBHOOK}"
