@@ -166,14 +166,13 @@ class SmartHomeAgent {
 `.trim();
 
       // AI 决策
+      const memoryContextText = `用户偏好：${memoryContext.userProfile || '无'}
+习惯记录：${memoryContext.habits || '无'}
+家居信息：${memoryContext.facts || '无'}`;
+
       const decision = await this.qwen.decide(prompt, {
         systemPrompt,
-        appendSystemPrompt: `
-当前记忆内容：
-用户偏好：${memoryContext.userProfile || '无'}
-习惯记录：${memoryContext.habits || '无'}
-家居信息：${memoryContext.facts || '无'}
-`,
+        appendSystemPrompt: memoryContextText,
         ...options,
       });
 
@@ -196,7 +195,15 @@ class SmartHomeAgent {
    */
   async loadYaml(filePath) {
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
+      let content = await fs.readFile(filePath, 'utf-8');
+      
+      // 替换环境变量 ${VAR} 或 $VAR
+      content = content.replace(/\$\{(\w+)\}/g, (match, key) => {
+        return process.env[key] || match;
+      }).replace(/\$(\w+)/g, (match, key) => {
+        return process.env[key] || match;
+      });
+      
       return yaml.parse(content) || {};
     } catch (error) {
       if (error.code === 'ENOENT') {

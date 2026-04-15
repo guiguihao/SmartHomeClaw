@@ -36,17 +36,18 @@ class QwenAgent {
       args.push(`--system-prompt "${this.escapeShell(options.systemPrompt)}"`);
     }
 
+    // 只追加一次
+    const appendParts = [];
+    if (this.systemPrompt) {
+      appendParts.push(this.systemPrompt);
+    }
     if (options.appendSystemPrompt) {
-      args.push(`--append-system-prompt "${this.escapeShell(options.appendSystemPrompt)}"`);
+      appendParts.push(options.appendSystemPrompt);
     }
 
-    if (options.appendSystemPrompt || this.systemPrompt) {
-      const appendText = options.appendSystemPrompt 
-        ? `${this.systemPrompt}\n${options.appendSystemPrompt}`
-        : this.systemPrompt;
-      if (appendText) {
-        args.push(`--append-system-prompt "${this.escapeShell(appendText)}"`);
-      }
+    if (appendParts.length > 0) {
+      const appendText = appendParts.join('\n');
+      args.push(`--append-system-prompt "${this.escapeShell(appendText)}"`);
     }
 
     const command = args.join(' ');
@@ -121,7 +122,12 @@ class QwenAgent {
    * @returns {string} 转义后的字符串
    */
   escapeShell(str) {
-    return str.replace(/"/g, '\\"').replace(/\$/g, '\\$');
+    return str
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\$/g, '\\$')
+      .replace(/`/g, '\\`');
   }
 }
 

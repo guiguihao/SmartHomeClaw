@@ -8,5 +8,28 @@
       "WebSearch"
     ]
   },
-  "mcpServers": {}
+  "modelProviders": {
+    "openai": [
+      {
+        "id": "qwen/qwen3-coder-480b-a35b-instruct",
+        "name": "qwen/qwen3-coder-480b-a35b-instruct",
+        "baseUrl": "https://nvidia1.guiguihao.cc.cd/v1",
+        "envKey": "OPENROUTER_API_KEY",
+        "description": "通过 nvidia1 使用 Qwen3.5-Coder"
+      }
+    ]
+  },
+  "env": {
+    "OPENROUTER_API_KEY": "sk-or-v1-xxxxxx"
+  },
+  "mcpServers": {},
+  "$version": 3,
+  "model": {
+    "name": "coder"
+  },
+  "security": {
+    "auth": {
+      "selectedType": "openai"
+    }
+  }
 }
