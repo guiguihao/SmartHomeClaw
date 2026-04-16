@@ -9,12 +9,7 @@ qwen:
   output_format: "json"
   yolo: true
   approval_mode: "auto_edit"
-  
-# MCP Server 配置
-mcp:
-  # MCP Server 存放目录
-  directory: "./mcp"
-  timeout: 60000
+
   
 # 记忆系统配置
 memory:

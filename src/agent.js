@@ -6,6 +6,7 @@ import Scheduler from './services/scheduler.js';
 import Heartbeat from './services/heartbeat.js';
 import MemoryService from './services/memory.js';
 import FeishuService from '../plugin/feishu.js';
+import MCPorterService from '../plugin/mcporter.js';
 
 // 加载环境变量
 dotenv.config();
@@ -61,7 +62,11 @@ class SmartHomeAgent {
     if (this.config.plugins?.feishu?.enabled) {
       this.feishu = new FeishuService(this.config.plugins.feishu, this.agent);
     }
-    
+
+    // 7. 初始化 MCPorter 服务
+    if (this.config.plugins?.mcporter?.enabled) {
+      this.mcporter = new MCPorterService(this.config.plugins.mcporter, this.agent);
+    }    
     console.log('[Agent] Initialized');
   }
 
@@ -84,6 +89,11 @@ class SmartHomeAgent {
     if (this.feishu) {
       await this.feishu.start();
     }
+
+    // 5. 启动 MCPorter 服务
+    if (this.mcporter) {
+      await this.mcporter.start();
+    }
     
     console.log('[Agent] SmartHomeClaw is running...');
     console.log('[Agent] Press Ctrl+C to stop');
@@ -101,6 +111,11 @@ class SmartHomeAgent {
     // 停止飞书服务
     if (this.feishu) {
       await this.feishu.stop();
+    }
+
+    // 停止 MCPorter 服务
+    if (this.mcporter) {
+      await this.mcporter.stop();
     }
     
     console.log('[Agent] Stopped');

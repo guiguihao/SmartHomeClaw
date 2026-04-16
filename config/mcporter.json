@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "smarthome": {
+      "command": "/Volumes/sandiskSSD/Project/xuexi/linux_openclaw/.venv/bin/python3",
+      "args": ["/Volumes/sandiskSSD/Project/xuexi/linux_openclaw/zhinengjiaju/smarthome_mcp/server.py"]
+    }
+  }
+}

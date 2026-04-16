@@ -51,6 +51,9 @@ class CoreAgent {
     this._scheduler = null;
     this._heartbeat = null;
     this._onCronTaskExecute = null;
+    this._mcpTools = [];         // MCP 工具列表（OpenAI function-calling 格式）
+    this._mcpToolMap = {};       // toolPrefix → { server, toolName, schema }
+    this._mcpService = null;     // MCPorterService 实例
   }
 
   setMemory(memoryService) {
@@ -63,6 +66,18 @@ class CoreAgent {
 
   setHeartbeat(heartbeat) {
     this._heartbeat = heartbeat;
+  }
+
+  /**
+   * 注入 MCP 工具到 CoreAgent
+   * @param {Array} mcpTools - OpenAI function-calling 格式的工具列表
+   * @param {object} mcpToolMap - toolPrefix → { server, toolName, schema }
+   * @param {object} mcpService - MCPorterService 实例（用于实际调用）
+   */
+  setMCPTools(mcpTools, mcpToolMap, mcpService) {
+    this._mcpTools = mcpTools || [];
+    this._mcpToolMap = mcpToolMap || {};
+    this._mcpService = mcpService;
   }
 
   /**
@@ -259,6 +274,11 @@ class CoreAgent {
       );
     }
 
+    // MCP 工具
+    if (this._mcpTools.length > 0) {
+      tools.push(...this._mcpTools);
+    }
+
     return tools;
   }
 
@@ -270,6 +290,8 @@ class CoreAgent {
       return await this._handleMemoryTool(toolName, args);
     } else if (toolName.startsWith('mgmt_')) {
       return this._handleManagementTool(toolName, args);
+    } else if (toolName.startsWith('mcp_')) {
+      return await this._handleMCPToolCall(toolName, args);
     }
     return `未知工具: ${toolName}`;
   }
@@ -360,6 +382,31 @@ class CoreAgent {
 
       default:
         return `未知管理工具: ${toolName}`;
+    }
+  }
+
+  /**
+   * 处理 MCP 工具调用 — 通过 MCPorterService 执行
+   * @param {string} toolPrefix - 如 "mcp_context7_resolve-library-id"
+   * @param {object} args - 工具参数
+   * @returns {string} 工具结果
+   */
+  async _handleMCPToolCall(toolPrefix, args = {}) {
+    const mapping = this._mcpToolMap[toolPrefix];
+    if (!mapping) {
+      return `MCP 工具未注册: ${toolPrefix}`;
+    }
+
+    if (!this._mcpService) {
+      return 'MCP 服务未配置';
+    }
+
+    try {
+      const result = await this._mcpService.callTool(toolPrefix, args);
+      console.log(`[CoreAgent] MCP: ${toolPrefix} → ${String(result).substring(0, 80)}`);
+      return result;
+    } catch (e) {
+      return `MCP 工具调用失败: ${e.message}`;
     }
   }
 

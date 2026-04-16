@@ -8,6 +8,12 @@ plugins:
     app_secret: "${FEISHU_APP_SECRET}"
     enable_listener: true
     auto_reply: true
+
+  # MCPorter 插件 — MCP Server 客户端
+  mcporter:
+    enabled: true
+    config_path: "./config/mcporter.json"
+    timeout: 30000
     
   # 其他插件示例:
   # wechat:

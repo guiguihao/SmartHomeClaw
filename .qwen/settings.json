@@ -6,7 +6,11 @@
       "Bash(npx *)",
       "Bash(qwen mcp *)",
       "WebSearch",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(npm *)",
+      "Bash(tar *)",
+      "Bash(cat *)",
+      "Bash(sed *)"
     ]
   },
   "modelProviders": {

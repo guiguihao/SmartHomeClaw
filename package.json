@@ -24,10 +24,11 @@
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.60.0",
     "dotenv": "^16.4.7",
+    "mcporter": "^0.8.1",
     "node-cron": "^3.0.3",
+    "openai": "^4.30.0",
     "ws": "^8.18.0",
-    "yaml": "^2.5.0",
-    "openai": "^4.30.0"
+    "yaml": "^2.5.0"
   },
   "engines": {
     "node": ">=18.0.0"
