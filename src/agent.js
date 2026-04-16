@@ -162,6 +162,7 @@ class SmartHomeAgent {
 
     // 在 providers 数组中查找匹配的 provider
     let matched = null;
+    let matchedModelConfig = null;
     for (const provider of providers) {
       if (providerName) {
         if (provider.name === providerName) {
@@ -169,8 +170,22 @@ class SmartHomeAgent {
           break;
         }
       } else {
+        // 旧格式兼容：models 为字符串数组
         if (provider.models && provider.models.includes(modelName)) {
           matched = provider;
+          break;
+        }
+      }
+    }
+
+    // 在 matched provider 的 models 中查找具体的模型配置
+    if (matched && matched.models) {
+      for (const m of matched.models) {
+        if (typeof m === 'string' && m === modelName) {
+          matchedModelConfig = { id: m, thinking: false, stream: false };
+          break;
+        } else if (typeof m === 'object' && m.id === modelName) {
+          matchedModelConfig = m;
           break;
         }
       }
@@ -180,13 +195,36 @@ class SmartHomeAgent {
     if (!matched) {
       if (providers.length > 0) {
         matched = providers[0];
+        // 尝试从第一个 provider 中取第一个模型
+        const firstModel = matched.models?.[0];
+        if (typeof firstModel === 'object') {
+          matchedModelConfig = firstModel;
+          modelName = firstModel.id;
+        } else if (typeof firstModel === 'string') {
+          matchedModelConfig = { id: firstModel, thinking: false, stream: false };
+          modelName = firstModel;
+        }
       } else {
         matched = {
           name: 'openai',
           base_url: 'https://api.openai.com/v1',
           api_key_env: 'OPENAI_API_KEY',
-          models: ['gpt-4o'],
+          models: [{ id: 'gpt-4o', thinking: false, stream: false }],
         };
+        matchedModelConfig = matched.models[0];
+        modelName = 'gpt-4o';
+      }
+    }
+
+    // 若只找到 provider 但没匹配到具体 model，取第一个
+    if (!matchedModelConfig && matched?.models?.length > 0) {
+      const first = matched.models[0];
+      if (typeof first === 'object') {
+        matchedModelConfig = first;
+        modelName = first.id;
+      } else {
+        matchedModelConfig = { id: first, thinking: false, stream: false };
+        modelName = first;
       }
     }
 
@@ -194,13 +232,15 @@ class SmartHomeAgent {
     const apiKeyEnv = matched.api_key_env || 'OPENAI_API_KEY';
     const apiKey = process.env[apiKeyEnv] || '';
 
-    console.log(`[Agent] Using model: ${modelName} @ provider: ${matched.name}`);
+    console.log(`[Agent] Using model: ${modelName} @ provider: ${matched.name}, thinking=${matchedModelConfig.thinking}, stream=${matchedModelConfig.stream}`);
 
     return {
       name: 'SmartHomeClaw',
       model: modelName,
       baseUrl: matched.base_url,
       apiKey: apiKey,
+      thinking: matchedModelConfig.thinking || false,
+      stream: matchedModelConfig.stream || false,
     };
   }
 

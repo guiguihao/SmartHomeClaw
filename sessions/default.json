@@ -90,5 +90,23 @@
     "role": "assistant",
     "content": "目前的记忆库中没有保存关于门窗、烟雾、燃气传感器的状态信息，也没有相应的心跳巡检指令返回这类数据。为确保安全，我需要获取这些传感器的实时读数或您最近一次的安全检查报告。请您提供当前的门窗状态、烟雾浓度、燃气浓度（或相应的报警日志），我即可立即为您判断是否一切正常并在必要时采取相应的应急措施。",
     "tool_calls": []
+  },
+  {
+    "role": "user",
+    "content": "hi"
+  },
+  {
+    "role": "assistant",
+    "content": "您好！我是 SmartHomeClaw，随时可以帮您管理定时任务、检查设备状态、更新偏好等。请告诉我需要做什么，我会直接在后台为您处理。",
+    "reasoning_content": "User just says \"hi\". Probably wants greeting. We can respond politely offering assistance."
+  },
+  {
+    "role": "user",
+    "content": "你做什么"
+  },
+  {
+    "role": "assistant",
+    "content": "我是一名驻守在您家庭服务器上的智能管家，能够直接在后台完成：\n\n- **定时任务**：查询、新增、删除、启用或关闭（如灯光、空调、扫地机器人等）  \n- **心跳巡检**：获取或修改系统自检指令，实时监控设备健康  \n- **长期记忆**：读取/更新您的温度、灯光等偏好、生活习惯和家居事实，帮助实现自动化  \n\n只要告诉我具体需求，我会立即调用后台工具完成，而不让您手动操作。有什么需要我帮忙的？",
+    "reasoning_content": "The user is asking \"你做什么\" (what do you do). We already responded earlier with capabilities. Could repeat but succinct. Should follow guidelines: respond briefly."
   }
 ]

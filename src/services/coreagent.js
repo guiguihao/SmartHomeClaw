@@ -43,6 +43,8 @@ class CoreAgent {
       timeout: modelConfig.timeout || 60000,
     });
     this.model = modelConfig.model;
+    this.thinking = modelConfig.thinking || false;
+    this.stream = modelConfig.stream || false;
 
     this._sessions = {};
     this._memoryService = null;
@@ -483,21 +485,44 @@ class CoreAgent {
     let finalResponse = '';
 
     for (let i = 0; i < this.maxToolIterations; i++) {
-      const response = await this.client.chat.completions.create({
+      const requestOptions = {
         model: this.model,
         messages: messages,
         tools: tools.length > 0 ? tools : undefined,
         temperature: 0.7,
-      });
-
-      const choice = response.choices[0];
-      const msgToStore = {
-        role: choice.message.role,
-        content: choice.message.content,
       };
 
-      if (choice.message.tool_calls) {
-        msgToStore.tool_calls = choice.message.tool_calls.map(tc => ({
+      // 思考模式：构建 reasoning 参数
+      if (this.thinking) {
+        requestOptions.temperature = 1; // 思考模式要求 temperature=1
+        // OpenAI extended thinking: 通过 reasoning_effort 参数
+        if (options.reasoningEffort) {
+          requestOptions.reasoning_effort = options.reasoningEffort;
+        }
+      }
+
+      // 流式输出模式
+      if (this.stream) {
+        requestOptions.stream = true;
+      }
+
+      // 根据是否流式选择不同的调用方式
+      const choice = this.stream
+        ? await this._handleStreamRequest(requestOptions)
+        : await this._handleNormalRequest(requestOptions);
+
+      const msgToStore = {
+        role: choice.role,
+        content: choice.content,
+      };
+
+      // 思考模式：保存 reasoning_content
+      if (choice.reasoning_content) {
+        msgToStore.reasoning_content = choice.reasoning_content;
+      }
+
+      if (choice.tool_calls) {
+        msgToStore.tool_calls = choice.tool_calls.map(tc => ({
           id: tc.id,
           type: tc.type,
           function: {
@@ -509,6 +534,11 @@ class CoreAgent {
 
       trimmedHistory.push(msgToStore);
       messages.push(msgToStore);
+
+      // 思考模式：输出 reasoning 日志
+      if (choice.reasoning_content) {
+        console.log(`[CoreAgent] Thinking: ${choice.reasoning_content.substring(0, 200)}...`);
+      }
 
       if (msgToStore.tool_calls && msgToStore.tool_calls.length > 0) {
         for (const tc of msgToStore.tool_calls) {
@@ -536,6 +566,81 @@ class CoreAgent {
     await this._saveSession(sessionId, trimmedHistory);
 
     return this.parseOutput(finalResponse);
+  }
+
+  /**
+   * 普通请求（非流式）
+   * @param {object} requestOptions - API 请求参数
+   * @returns {object} 解析后的 choice 数据 { role, content, tool_calls, reasoning_content }
+   */
+  async _handleNormalRequest(requestOptions) {
+    const response = await this.client.chat.completions.create(requestOptions);
+    const message = response.choices[0].message;
+    return {
+      role: message.role,
+      content: message.content,
+      tool_calls: message.tool_calls || null,
+      reasoning_content: message.reasoning_content || null,
+    };
+  }
+
+  /**
+   * 流式请求 — 逐 chunk 拼接 content / tool_calls / reasoning_content
+   * @param {object} requestOptions - API 请求参数
+   * @returns {object} 解析后的 choice 数据 { role, content, tool_calls, reasoning_content }
+   */
+  async _handleStreamRequest(requestOptions) {
+    const stream = await this.client.chat.completions.create(requestOptions);
+
+    let content = '';
+    let reasoningContent = '';
+    let role = 'assistant';
+    const toolCallAccumulators = {}; // { index: { id, name, arguments } }
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta;
+      if (!delta) continue;
+
+      if (delta.role) role = delta.role;
+      if (delta.content) content += delta.content;
+      if (delta.reasoning_content) reasoningContent += delta.reasoning_content;
+
+      // 流式 tool_calls 拼接
+      if (delta.tool_calls) {
+        for (const tcDelta of delta.tool_calls) {
+          const idx = tcDelta.index;
+          if (!toolCallAccumulators[idx]) {
+            toolCallAccumulators[idx] = {
+              id: tcDelta.id || '',
+              type: tcDelta.type || 'function',
+              function: { name: '', arguments: '' },
+            };
+          }
+          if (tcDelta.id) toolCallAccumulators[idx].id = tcDelta.id;
+          if (tcDelta.function?.name) toolCallAccumulators[idx].function.name += tcDelta.function.name;
+          if (tcDelta.function?.arguments) toolCallAccumulators[idx].function.arguments += tcDelta.function.arguments;
+        }
+      }
+
+      // 实时输出到终端
+      if (delta.content) {
+        process.stdout.write(delta.content);
+      }
+    }
+
+    // 流式输出完成后换行
+    if (content) process.stdout.write('\n');
+
+    const tool_calls = Object.keys(toolCallAccumulators).length > 0
+      ? Object.values(toolCallAccumulators)
+      : null;
+
+    return {
+      role,
+      content,
+      tool_calls,
+      reasoning_content: reasoningContent || null,
+    };
   }
 
   /**
