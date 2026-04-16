@@ -45,9 +45,17 @@ class SmartHomeAgent {
 
     // 4. 初始化调度器
     this.scheduler = new Scheduler();
+    this.agent.setScheduler(this.scheduler);
 
     // 5. 初始化心跳
     this.heartbeat = new Heartbeat(this.agent, this.config.heartbeat);
+    this.agent.setHeartbeat(this.heartbeat);
+
+    // 设置 Cron 任务执行回调
+    this.agent.setOnCronTaskExecute(async (prompt, taskConfig) => {
+      console.log(`[Agent] Cron triggered: ${taskConfig.name}`);
+      await this.thinkAndAct(prompt);
+    });
 
     // 6. 初始化飞书服务
     if (this.config.plugins?.feishu?.enabled) {
@@ -130,63 +138,69 @@ class SmartHomeAgent {
 
   /**
    * 从配置中构建模型配置
+   * 与 Python 版 load_model_from_config 对齐。
    *
-   * default 格式为 "provider/modelId"，其中 provider 是配置中的顶级键，
-   * modelId 是该 provider 下某个模型条目的 id 字段。
-   * 例如: "navida/openai/gpt-oss-120b" → provider=navida, modelId=openai/gpt-oss-120b
+   * default 格式为 "{provider}/{model}" 或纯模型名 "{model}"。
+   * provider 在 providers 数组中按 name 字段匹配。
+   * apiKey 通过 api_key_env 从环境变量读取。
    */
   _buildModelConfig() {
     const models = this.config.models || {};
-    const defaultModelId = models.default;
+    const defaultVal = models.default || 'gpt-4o';
+    const providers = models.providers || [];
 
-    if (!defaultModelId) {
-      throw new Error('No default model configured');
-    }
-
-    // 从 default 中分离 provider 前缀与实际模型 ID
-    const slashIndex = defaultModelId.indexOf('/');
-    let providerName;
-    let modelId;
-
-    if (slashIndex !== -1) {
-      providerName = defaultModelId.slice(0, slashIndex);
-      modelId = defaultModelId.slice(slashIndex + 1);
+    // 分离 provider 前缀与模型名
+    if (defaultVal.includes('/')) {
+      const targetProvider = defaultVal.slice(0, defaultVal.indexOf('/'));
+      const targetModel = defaultVal.slice(defaultVal.indexOf('/') + 1);
+      var providerName = targetProvider;
+      var modelName = targetModel;
     } else {
-      // 没有 provider 前缀，遍历所有 provider 查找
-      providerName = null;
-      modelId = defaultModelId;
+      var providerName = null;
+      var modelName = defaultVal;
     }
 
-    let modelConfig = null;
-
-    if (providerName) {
-      // 在指定 provider 中查找
-      const providerModels = models[providerName];
-      if (providerModels && Array.isArray(providerModels)) {
-        modelConfig = providerModels.find(m => m.id === modelId || m.id === defaultModelId);
+    // 在 providers 数组中查找匹配的 provider
+    let matched = null;
+    for (const provider of providers) {
+      if (providerName) {
+        if (provider.name === providerName) {
+          matched = provider;
+          break;
+        }
+      } else {
+        if (provider.models && provider.models.includes(modelName)) {
+          matched = provider;
+          break;
+        }
       }
     }
 
-    // 若未找到，遍历所有 provider
-    if (!modelConfig) {
-      for (const [key, providerModels] of Object.entries(models)) {
-        if (key === 'default' || !Array.isArray(providerModels)) continue;
-        modelConfig = providerModels.find(m => m.id === modelId || m.id === defaultModelId);
-        if (modelConfig) break;
+    // 未找到则 fallback 到第一个 provider 或默认值
+    if (!matched) {
+      if (providers.length > 0) {
+        matched = providers[0];
+      } else {
+        matched = {
+          name: 'openai',
+          base_url: 'https://api.openai.com/v1',
+          api_key_env: 'OPENAI_API_KEY',
+          models: ['gpt-4o'],
+        };
       }
     }
 
-    if (!modelConfig) {
-      throw new Error(`Model ${defaultModelId} not found in config`);
-    }
+    // 从环境变量读取 API Key
+    const apiKeyEnv = matched.api_key_env || 'OPENAI_API_KEY';
+    const apiKey = process.env[apiKeyEnv] || '';
 
-    console.log(`[Agent] Using model: ${modelConfig.id}`);
+    console.log(`[Agent] Using model: ${modelName} @ provider: ${matched.name}`);
 
     return {
       name: 'SmartHomeClaw',
-      model: modelConfig.id,
-      baseUrl: modelConfig.baseUrl,
-      apiKey: modelConfig.apiKey,
+      model: modelName,
+      baseUrl: matched.base_url,
+      apiKey: apiKey,
     };
   }
 

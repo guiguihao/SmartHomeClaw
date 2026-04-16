@@ -17,18 +17,26 @@
         "envKey": "OPENROUTER_API_KEY",
         "description": "通过 nvidia1 使用 Qwen3.5-Coder"
       },
-       {
+      {
         "id": "ZhipuAI/GLM-5.1",
         "name": "ZhipuAI/GLM-5.1",
         "baseUrl": "https://mota.guiguihao.cc.cd/v1",
         "envKey": "mota_API_KEY",
-        "description": "通过 nvidia1 使用 Qwen3.5-Coder"
+        "description": "通过 mota 使用 zai-org/GLM-5.1"
+      },
+      {
+        "id": "zai-org/GLM-5.1-FP8",
+        "name": "zai-org/GLM-5.1-FP8",
+        "baseUrl": "https://api.us-west-2.modal.direct/v1",
+        "envKey": "modal_API_KEY",
+        "description": "通过 modal 使用 zai-org/GLM-5.1-FP8"
       }
     ]
   },
   "env": {
     "OPENROUTER_API_KEY": "sk-or-v1-xxxxxx",
-    "mota_API_KEY":"mota"
+    "mota_API_KEY": "mota",
+    "modal_API_KEY": "modalresearch_86MAd77mo226iajoiFY49XXtPvcVxcmT8RtRFbRSRrY"
   },
   "mcpServers": {},
   "$version": 3,

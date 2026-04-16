@@ -79,6 +79,38 @@ class Scheduler {
   }
 
   /**
+   * 启用指定任务（恢复调度）
+   * @param {string} id - 任务 ID
+   * @returns {boolean} 是否成功
+   */
+  enable(id) {
+    const taskData = this.tasks.get(id);
+    if (!taskData) {
+      console.warn(`[Scheduler] Task ${id} not found, cannot enable`);
+      return false;
+    }
+    taskData.task.start();
+    console.log(`[Scheduler] Enabled: ${id}`);
+    return true;
+  }
+
+  /**
+   * 禁用指定任务（暂停调度，保留注册）
+   * @param {string} id - 任务 ID
+   * @returns {boolean} 是否成功
+   */
+  disable(id) {
+    const taskData = this.tasks.get(id);
+    if (!taskData) {
+      console.warn(`[Scheduler] Task ${id} not found, cannot disable`);
+      return false;
+    }
+    taskData.task.stop();
+    console.log(`[Scheduler] Disabled: ${id}`);
+    return true;
+  }
+
+  /**
    * 启动所有任务
    */
   startAll() {

@@ -35,18 +35,20 @@ class CoreAgent {
     this.maxContextTurns = modelConfig.maxContextTurns || 20;
     this.maxToolIterations = modelConfig.maxToolIterations || 10;
     this.sessionDir = modelConfig.sessionDir || './sessions';
-
+    console.log(`[CoreAgent] model=${modelConfig.model}, baseUrl=${modelConfig.baseUrl}`);
+    
     this.client = new OpenAI({
-      baseURL: modelConfig.baseUrl || process.env.OPENAI_BASE_URL,
-      apiKey: modelConfig.apiKey || process.env.OPENAI_API_KEY,
+      baseURL: modelConfig.baseUrl,
+      apiKey: modelConfig.apiKey,
       timeout: modelConfig.timeout || 60000,
     });
-    this.model = modelConfig.model || 'gpt-4o';
+    this.model = modelConfig.model;
 
     this._sessions = {};
     this._memoryService = null;
     this._scheduler = null;
     this._heartbeat = null;
+    this._onCronTaskExecute = null;
   }
 
   setMemory(memoryService) {
@@ -61,6 +63,14 @@ class CoreAgent {
     this._heartbeat = heartbeat;
   }
 
+  /**
+   * 设置 Cron 任务触发时的执行回调
+   * @param {Function} handler - 接收 (description, taskConfig) 的异步函数
+   */
+  setOnCronTaskExecute(handler) {
+    this._onCronTaskExecute = handler;
+  }
+
   async init() {
     await fs.mkdir(this.sessionDir, { recursive: true });
   }
@@ -71,7 +81,7 @@ class CoreAgent {
   async _loadMemoryContext() {
     if (!this._memoryService) return '';
     try {
-      const all = await (this._memoryService.getAll?.() || Promise.resolve({}));
+      const all = await this._memoryService.getAll();
       const profile = all.userProfile || '';
       const habits = all.habits || '';
       const facts = all.facts || '';
@@ -79,12 +89,6 @@ class CoreAgent {
     } catch {
       return '';
     }
-  }
-
-  // Keep backward compatibility for any existing calls
-  _getMemoryContext() {
-    // Synchronous stub – returns empty; async version should be used
-    return '';
   }
 
   _buildSystemPrompt() {
@@ -256,34 +260,40 @@ class CoreAgent {
     return tools;
   }
 
-  _handleToolCall(toolName, args = {}) {
+  /**
+   * 处理工具调用（异步）
+   */
+  async _handleToolCall(toolName, args = {}) {
     if (toolName.startsWith('memory_')) {
-      return this._handleMemoryTool(toolName, args);
+      return await this._handleMemoryTool(toolName, args);
     } else if (toolName.startsWith('mgmt_')) {
       return this._handleManagementTool(toolName, args);
     }
     return `未知工具: ${toolName}`;
   }
 
-  _handleMemoryTool(toolName, args = {}) {
+  /**
+   * 处理记忆工具调用（异步，通过 MemoryService 的正式方法读写）
+   */
+  async _handleMemoryTool(toolName, args = {}) {
     if (!this._memoryService) return '记忆服务未配置';
 
     try {
       switch (toolName) {
         case 'memory_get_user_profile':
-          return this._memoryService.userProfile || '';
+          return await this._memoryService.loadUserProfile();
         case 'memory_update_user_profile':
-          this._memoryService.userProfile = args.content;
+          await this._memoryService.updateUserProfile(args.content);
           return '已更新用户偏好';
         case 'memory_get_habits':
-          return this._memoryService.habits || '';
+          return await this._memoryService.loadHabits();
         case 'memory_update_habits':
-          this._memoryService.habits = args.content;
+          await this._memoryService.updateHabits(args.content);
           return '已更新习惯记录';
         case 'memory_get_facts':
-          return this._memoryService.facts || '';
+          return await this._memoryService.loadFacts();
         case 'memory_update_facts':
-          this._memoryService.facts = args.content;
+          await this._memoryService.updateFacts(args.content);
           return '已更新事实记录';
         default:
           return `未知记忆工具: ${toolName}`;
@@ -293,45 +303,104 @@ class CoreAgent {
     }
   }
 
+  /**
+   * 处理管理工具调用
+   */
   _handleManagementTool(toolName, args = {}) {
     switch (toolName) {
       case 'mgmt_cron_list':
         if (!this._scheduler) return '调度器未配置';
-        const tasks = this._scheduler.listTasks?.() || [];
+        const tasks = this._scheduler.listTasks() || [];
         if (!tasks.length) return '无定时任务';
         return tasks.map(t => `[${t.id}] ${t.name} (${t.cron})`).join('\n');
 
       case 'mgmt_cron_add':
         if (!this._scheduler) return '调度器未配置';
-        this._scheduler.register?.(args.task_id, args.cron, () => {}, { name: args.name });
+        const taskConfig = {
+          id: args.task_id,
+          name: args.name,
+          cron: args.cron,
+          prompt: args.description,
+          enabled: true,
+        };
+        this._scheduler.register(args.task_id, args.cron, async () => {
+          if (this._onCronTaskExecute) {
+            await this._onCronTaskExecute(args.description, taskConfig);
+          } else {
+            console.warn(`[CoreAgent] Cron task ${args.task_id} fired but no executor set`);
+          }
+        }, { name: args.name });
         return `已添加定时任务: ${args.task_id}`;
 
       case 'mgmt_cron_remove':
         if (!this._scheduler) return '调度器未配置';
-        this._scheduler.unregister?.(args.task_id);
+        this._scheduler.unregister(args.task_id);
         return `已删除定时任务: ${args.task_id}`;
 
       case 'mgmt_cron_toggle':
         if (!this._scheduler) return '调度器未配置';
         if (args.enabled) {
-          return `已启用任务: ${args.task_id}`;
+          const ok = this._scheduler.enable(args.task_id);
+          return ok ? `已启用任务: ${args.task_id}` : `任务 ${args.task_id} 不存在，无法启用`;
         } else {
-          this._scheduler.unregister?.(args.task_id);
-          return `已禁用任务: ${args.task_id}`;
+          const ok = this._scheduler.disable(args.task_id);
+          return ok ? `已禁用任务: ${args.task_id}` : `任务 ${args.task_id} 不存在，无法禁用`;
         }
 
       case 'mgmt_heartbeat_get':
         if (!this._heartbeat) return '心跳未配置';
-        return this._heartbeat.getTaskContent?.() || '';
+        return this._heartbeat.getTaskContent() || '';
 
       case 'mgmt_heartbeat_set':
         if (!this._heartbeat) return '心跳未配置';
-        this._heartbeat.setTaskContent?.(args.content);
+        this._heartbeat.setTaskContent(args.content);
         return '已更新心跳任务';
 
       default:
         return `未知管理工具: ${toolName}`;
     }
+  }
+
+  /**
+   * 截断历史消息，保留完整的 tool_call ↔ tool_result 配对
+   * @param {Array} history - 原始历史
+   * @param {number} maxLen - 最大保留条数
+   * @returns {Array} 截断后的历史
+   */
+  _trimHistory(history, maxLen) {
+    if (history.length <= maxLen) return history;
+
+    let trimmed = history.slice(history.length - maxLen);
+
+    // 检查开头是否有孤立的 tool_result（对应的 tool_call 被截掉了）
+    const orphanStart = trimmed.findIndex(
+      (msg, idx) => msg.role === 'tool' && idx === 0
+    );
+    if (orphanStart !== -1 && orphanStart === 0) {
+      // 跳过所有连续的 orphan tool_result
+      let skip = 0;
+      while (skip < trimmed.length && trimmed[skip].role === 'tool') {
+        skip++;
+      }
+      trimmed = trimmed.slice(skip);
+    }
+
+    // 同样检查开头是否有 tool_calls 但缺少后续 tool_result 的 assistant 消息
+    while (trimmed.length > 0) {
+      const first = trimmed[0];
+      if (first.role === 'assistant' && first.tool_calls && first.tool_calls.length > 0) {
+        // 检查紧跟的消息是否是对应第一个 tool_call 的 tool_result
+        if (trimmed.length > 1 && trimmed[1].role === 'tool') {
+          break; // 配对完整，保留
+        }
+        // 缺少 tool_result，移除这条 assistant 消息
+        trimmed = trimmed.slice(1);
+      } else {
+        break;
+      }
+    }
+
+    return trimmed;
   }
 
   _normalizeMessages(history) {
@@ -394,21 +463,21 @@ class CoreAgent {
     const history = this._sessions[sessionId];
     history.push({ role: 'user', content: prompt });
 
-    if (history.length > this.maxContextTurns * 2) {
-      history.splice(0, history.length - this.maxContextTurns * 2);
+    const maxLen = this.maxContextTurns * 2;
+    this._sessions[sessionId] = this._trimHistory(history, maxLen);
+    const trimmedHistory = this._sessions[sessionId];
+
+    let systemPrompt = this._buildSystemPrompt();
+    let ctx = await this._loadMemoryContext();
+    if (options.appendSystemPrompt) {
+      ctx = ctx ? `${ctx}\n${options.appendSystemPrompt}` : options.appendSystemPrompt;
+    }
+    if (ctx) {
+      systemPrompt += `\n\n## 上下文\n${ctx}`;
     }
 
-let systemPrompt = this._buildSystemPrompt();
-      let ctx = await this._loadMemoryContext();
-      if (options.appendSystemPrompt) {
-        ctx = ctx ? `${ctx}\n${options.appendSystemPrompt}` : options.appendSystemPrompt;
-      }
-      if (ctx) {
-        systemPrompt += `\n\n## 上下文\n${ctx}`;
-      }
-
     const messages = [{ role: 'system', content: systemPrompt }];
-    messages.push(...this._normalizeMessages(history));
+    messages.push(...this._normalizeMessages(trimmedHistory));
 
     const tools = this._getAllTools();
     let finalResponse = '';
@@ -438,7 +507,7 @@ let systemPrompt = this._buildSystemPrompt();
         }));
       }
 
-      history.push(msgToStore);
+      trimmedHistory.push(msgToStore);
       messages.push(msgToStore);
 
       if (msgToStore.tool_calls && msgToStore.tool_calls.length > 0) {
@@ -446,13 +515,15 @@ let systemPrompt = this._buildSystemPrompt();
           let args = {};
           try {
             args = JSON.parse(tc.function.arguments);
-          } catch {}
+          } catch (e) {
+            console.warn(`[CoreAgent] 工具参数解析失败: ${tc.function.name}, raw: ${tc.function.arguments}`);
+          }
 
-          const result = this._handleToolCall(tc.function.name, args);
-          console.log(`[CoreAgent] 工具: ${tc.function.name} → ${result.substring(0, 80)}`);
+          const result = await this._handleToolCall(tc.function.name, args);
+          console.log(`[CoreAgent] 工具: ${tc.function.name} → ${String(result).substring(0, 80)}`);
 
-          const toolResult = { role: 'tool', tool_call_id: tc.id, content: result };
-          history.push(toolResult);
+          const toolResult = { role: 'tool', tool_call_id: tc.id, content: String(result) };
+          trimmedHistory.push(toolResult);
           messages.push(toolResult);
         }
         continue;
@@ -462,7 +533,7 @@ let systemPrompt = this._buildSystemPrompt();
       }
     }
 
-    await this._saveSession(sessionId, history);
+    await this._saveSession(sessionId, trimmedHistory);
 
     return this.parseOutput(finalResponse);
   }
@@ -478,7 +549,7 @@ let systemPrompt = this._buildSystemPrompt();
   }
 
   /**
-   * 解析输出
+   * 解析输出 — 能 JSON.parse 就解析，否则直接当文本返回
    * @param {string} output - 原始输出
    * @returns {object} 解析后对象
    */
@@ -488,14 +559,6 @@ let systemPrompt = this._buildSystemPrompt();
     try {
       return JSON.parse(output);
     } catch {
-      const match = output.match(/\{[\s\S]*\}/);
-      if (match) {
-        try {
-          return JSON.parse(match[0]);
-        } catch {
-          return { response: output };
-        }
-      }
       return { response: output };
     }
   }
