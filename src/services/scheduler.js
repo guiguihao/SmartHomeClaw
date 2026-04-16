@@ -22,6 +22,8 @@ class Scheduler {
       this.unregister(id);
     }
 
+    const scheduled = options.autoStart !== false;
+
     const task = cron.schedule(cronExpression, async () => {
       console.log(`[Scheduler] Executing: ${id} (${options.name || 'unnamed'})`);
       try {
@@ -30,11 +32,11 @@ class Scheduler {
         console.error(`[Scheduler] Error in task ${id}:`, error.message);
       }
     }, {
-      scheduled: options.autoStart !== false,
+      scheduled,
       timezone: options.timezone || 'Asia/Shanghai',
     });
 
-    this.tasks.set(id, { task, handler, options });
+    this.tasks.set(id, { task, handler, options, cronExpression, running: scheduled });
     console.log(`[Scheduler] Registered: ${id} - "${cronExpression}"`);
   }
 
@@ -90,6 +92,7 @@ class Scheduler {
       return false;
     }
     taskData.task.start();
+    taskData.running = true;
     console.log(`[Scheduler] Enabled: ${id}`);
     return true;
   }
@@ -106,6 +109,7 @@ class Scheduler {
       return false;
     }
     taskData.task.stop();
+    taskData.running = false;
     console.log(`[Scheduler] Disabled: ${id}`);
     return true;
   }
@@ -116,6 +120,7 @@ class Scheduler {
   startAll() {
     for (const [id, taskData] of this.tasks) {
       taskData.task.start();
+      taskData.running = true;
     }
     console.log(`[Scheduler] Started all tasks (${this.tasks.size})`);
   }
@@ -126,6 +131,7 @@ class Scheduler {
   stopAll() {
     for (const [id, taskData] of this.tasks) {
       taskData.task.stop();
+      taskData.running = false;
     }
     console.log('[Scheduler] Stopped all tasks');
   }
@@ -138,8 +144,8 @@ class Scheduler {
     return Array.from(this.tasks.entries()).map(([id, data]) => ({
       id,
       name: data.options.name,
-      cron: data.task.options?.cronExpression || 'unknown',
-      running: data.task.getStatus() === 'scheduled',
+      cron: data.cronExpression,
+      running: data.running,
     }));
   }
 }
