@@ -29,8 +29,6 @@ function buildCardContent(text) {
 
 /**
  * 构建纯文本消息 JSON
- * @param {string} text - 显示文本
- * @returns {string} JSON 字符串
  */
 function buildTextContent(text) {
   return JSON.stringify({ text });
@@ -51,15 +49,16 @@ class FeishuService {
     // chatId → sessionId 映射（支持 /new 切换新会话）
     this._chatSessionMap = {};
 
-    // 官方 SDK 客户端
+    // 消息去重：避免飞书重复投递相同消息
+    // key: `${chatId}_${messageId}` 或 `${chatId}_${hash(content)}`
+    this._processedMessageSet = new Set();
+    this._dedupCleanInterval = null;
+
     this.client = null;      // HTTP API 客户端
     this.wsClient = null;    // WebSocket 长连接客户端
     this.eventDispatcher = null;
   }
 
-  /**
-   * 启动飞书服务
-   */
   async start() {
     if (!this.appId || !this.appSecret) {
       console.warn('[Feishu] App ID or Secret not configured, skipping...');
@@ -74,6 +73,12 @@ class FeishuService {
     console.log('[Feishu] Starting...');
 
     try {
+      // 确保之前没有启动
+      if (this.client || this.wsClient) {
+        console.warn('[Feishu] Already initialized, stopping first...');
+        await this.stop();
+      }
+
       // 1. 初始化 HTTP 客户端 (用于主动调用 API)
       this.client = new lark.Client({
         appId: this.appId,
@@ -93,6 +98,9 @@ class FeishuService {
       // 4. 启动长连接
       this.wsClient.start({ eventDispatcher: this.eventDispatcher });
 
+      // 5. 启动去重缓存清理定时器（每5分钟清理1分钟前的记录）
+      this._startDedupCleaner();
+
       console.log('[Feishu] ✅ Started successfully, listening for messages...');
     } catch (error) {
       console.error('[Feishu] Failed to start:', error.message);
@@ -100,11 +108,14 @@ class FeishuService {
     }
   }
 
-  /**
-   * 停止飞书服务
-   */
   async stop() {
     console.log('[Feishu] Stopping...');
+
+    if (this._dedupCleanInterval) {
+      clearInterval(this._dedupCleanInterval);
+      this._dedupCleanInterval = null;
+    }
+    this._processedMessageSet.clear();
 
     if (this.wsClient) {
       if (typeof this.wsClient.stop === 'function') {
@@ -115,7 +126,66 @@ class FeishuService {
       this.wsClient = null;
     }
 
+    this.client = null;
+    this.eventDispatcher = null;
     console.log('[Feishu] Stopped');
+  }
+
+  /**
+   * 去重辅助方法
+   */
+  _startDedupCleaner() {
+    if (this._dedupCleanInterval) clearInterval(this._dedupCleanInterval);
+    this._dedupCleanInterval = setInterval(() => {
+      // 每5分钟清理一次，但实际我们的 Set 会持续累积
+      // 如果消息量很大，可以改为使用 Map 记录时间戳，清理超过5分钟的
+      // 目前先简单实现，只在 Set 过大时清理
+      if (this._processedMessageSet.size > 1000) {
+        console.log(`[Feishu] Dedup cache too large (${this._processedMessageSet.size}), clearing...`);
+        this._processedMessageSet.clear();
+      }
+    }, 5 * 60 * 1000); // 5分钟
+  }
+
+  /**
+   * 检查消息是否已处理过
+   * @param {string} chatId - 聊天 ID
+   * @param {object} msgData - 消息数据 (包含 message_id, create_time 等)
+   * @param {string} content - 消息内容
+   * @returns {boolean} true 表示已处理过，应该跳过
+   */
+  _isDuplicateMessage(chatId, msgData, content) {
+    // 优先使用 message_id
+    const messageId = msgData.message_id || msgData.msg_id;
+    let key = `${chatId}_${messageId}`;
+
+    // 如果无 message_id，使用 chatId+内容哈希（简易）和时间窗口
+    if (!messageId) {
+      const hash = this._simpleHash(content);
+      key = `${chatId}_${hash}`;
+    }
+
+    if (this._processedMessageSet.has(key)) {
+      console.log(`[Feishu] Duplicate message detected (key=${key}), skipping...`);
+      return true;
+    }
+
+    // 标记为已处理
+    this._processedMessageSet.add(key);
+    return false;
+  }
+
+  /**
+   * 简易字符串哈希（用于去重）
+   */
+  _simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const chr = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + chr;
+      hash |= 0; // 转为32位整数
+    }
+    return Math.abs(hash).toString(16);
   }
 
   /**
@@ -150,6 +220,12 @@ class FeishuService {
 
       // 忽略机器人自己发的消息
       if (senderId && senderId === this.appId) {
+        return;
+      }
+
+      // 去重检查：避免重复处理相同消息
+      if (this._isDuplicateMessage(chatId, msgData, content)) {
+        console.log(`[Feishu] Skip duplicate message from ${senderId}: ${content}`);
         return;
       }
 

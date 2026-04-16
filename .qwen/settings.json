@@ -10,7 +10,9 @@
       "Bash(npm *)",
       "Bash(tar *)",
       "Bash(cat *)",
-      "Bash(sed *)"
+      "Bash(sed *)",
+      "Bash(timeout *)",
+      "Bash(find *)"
     ]
   },
   "modelProviders": {
@@ -30,6 +32,20 @@
         "description": "通过 mota 使用 zai-org/GLM-5.1"
       },
       {
+        "id": "deepseek-ai/DeepSeek-V3.2",
+        "name": "deepseek-ai/DeepSeek-V3.2",
+        "baseUrl": "https://mota.guiguihao.cc.cd/v1",
+        "envKey": "mota_API_KEY",
+        "description": "通过 mota 使用 deepseek-ai/DeepSeek-V3.2"
+      },
+      {
+        "id": "Qwen/Qwen3.5-397B-A17B",
+        "name": "Qwen/Qwen3.5-397B-A17B",
+        "baseUrl": "https://mota.guiguihao.cc.cd/v1",
+        "envKey": "mota_API_KEY",
+        "description": "通过 mota 使用 Qwen/Qwen3.5-397B-A17B"
+      },
+      {
         "id": "zai-org/GLM-5.1-FP8",
         "name": "zai-org/GLM-5.1-FP8",
         "baseUrl": "https://api.us-west-2.modal.direct/v1",
@@ -46,7 +62,7 @@
   "mcpServers": {},
   "$version": 3,
   "model": {
-    "name": "ZhipuAI/GLM-5.1"
+    "name": "deepseek-ai/DeepSeek-V3.2"
   },
   "security": {
     "auth": {
