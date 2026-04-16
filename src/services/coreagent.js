@@ -458,6 +458,17 @@ class CoreAgent {
   async decide(prompt, options = {}) {
     const sessionId = options.sessionId || 'default';
 
+    // ── 指令拦截 ──
+    const trimmed = prompt.trim();
+    if (trimmed === '/new' || trimmed === '/new会话') {
+      const result = await this.newSession(sessionId);
+      return { ...result, command: 'new' };
+    }
+    if (trimmed === '/compress' || trimmed === '/压缩') {
+      const result = await this.compressSession(sessionId);
+      return { ...result, command: 'compress' };
+    }
+
     if (!this._sessions[sessionId]) {
       this._sessions[sessionId] = await this._loadSession(sessionId);
     }
@@ -681,6 +692,94 @@ class CoreAgent {
     }
     const sessionPath = path.join(this.sessionDir, `${sessionId}.json`);
     await fs.unlink(sessionPath).catch(() => {});
+  }
+
+  /**
+   * 开启新会话 — 生成新的 sessionId，清空旧会话
+   * @param {string} currentSessionId - 当前会话 ID
+   * @returns {object} { sessionId, response }
+   */
+  async newSession(currentSessionId = 'default') {
+    // 先保存并清除当前会话
+    if (this._sessions[currentSessionId]) {
+      await this._saveSession(currentSessionId, this._sessions[currentSessionId]);
+      this._sessions[currentSessionId] = [];
+    }
+
+    // 生成新 sessionId
+    const newId = `session_${Date.now()}`;
+
+    // 初始化新会话（空历史）
+    this._sessions[newId] = [];
+    await this._saveSession(newId, []);
+
+    console.log(`[CoreAgent] New session created: ${newId}`);
+    return {
+      sessionId: newId,
+      response: '🆕 新会话已开启，历史已清空。',
+    };
+  }
+
+  /**
+   * 压缩会话 — 用 LLM 将历史对话总结为摘要，替换原历史
+   * @param {string} sessionId - 会话 ID
+   * @returns {object} { response }
+   */
+  async compressSession(sessionId = 'default') {
+    if (!this._sessions[sessionId]) {
+      this._sessions[sessionId] = await this._loadSession(sessionId);
+    }
+
+    const history = this._sessions[sessionId];
+    if (history.length <= 2) {
+      return { response: '📝 会话很短，无需压缩。' };
+    }
+
+    // 将历史消息格式化为文本供 LLM 总结
+    const historyText = history
+      .map(msg => {
+        const roleLabel = msg.role === 'user' ? '用户' :
+                          msg.role === 'assistant' ? 'AI' :
+                          msg.role === 'tool' ? '工具结果' :
+                          msg.role === 'system' ? '系统' : msg.role;
+        let text = `[${roleLabel}]: ${msg.content || ''}`;
+        if (msg.tool_calls) {
+          text += ` (调用了工具: ${msg.tool_calls.map(tc => tc.function?.name).join(', ')})`;
+        }
+        return text;
+      })
+      .join('\n');
+
+    // 调用 LLM 生成摘要
+    const compressPrompt = `请将以下对话历史压缩为一段简洁的摘要，保留关键信息、决策和结果，去除冗余细节。用中文输出，不超过200字。\n\n${historyText}`;
+
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [
+          { role: 'system', content: '你是一个对话摘要助手，擅长提炼关键信息。' },
+          { role: 'user', content: compressPrompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 300,
+      });
+
+      const summary = response.choices[0].message.content || '压缩失败';
+
+      // 用摘要替换原历史
+      this._sessions[sessionId] = [
+        { role: 'system', content: `以下是之前对话的摘要：\n${summary}` },
+      ];
+      await this._saveSession(sessionId, this._sessions[sessionId]);
+
+      console.log(`[CoreAgent] Session compressed: ${sessionId}, ${history.length} msgs → summary`);
+      return {
+        response: `📝 会话已压缩：${history.length} 条消息 → 摘要\n\n${summary}`,
+      };
+    } catch (error) {
+      console.error(`[CoreAgent] Compress failed: ${error.message}`);
+      return { response: `❌ 压缩失败: ${error.message}` };
+    }
   }
 }
 

@@ -1,0 +1,11 @@
+[
+  {
+    "role": "user",
+    "content": "你能处理什么？"
+  },
+  {
+    "role": "assistant",
+    "content": "SmartHomeClaw 能为您完成以下工作：\n\n**1. 定时任务管理（Cron）**  \n- 查看、添加、删除、启用/禁用定时任务（如开关灯、调节空调、启动扫地机器人等）。\n\n**2. 心跳巡检（Heartbeat）**  \n- 获取或修改系统心跳检测指令，确保关键设备始终在线并及时发现异常。\n\n**3. 长期记忆（Memory）**  \n- 读取、更新您的个人偏好、生活习惯、重要事实等信息，帮助 AI 随时做出更贴合您的决定。\n\n**4. 设备控制（间接）**  \n- 通过上述工具间接控制家中空调、灯光、厨房电器等硬件，实现自动化场景和手动指令执行。\n\n**5. 状态查询**  \n- 查询当前定时任务列表、心跳配置以及已存的用户信息/习惯记录。\n\n简而言之，我可以 **自助查询、自动执行、持续学习**，让您无需动手即可管理整个智能家居系统。有什么具体需求，请直接告诉我，我会立刻帮您完成！",
+    "reasoning_content": "We need to respond describing capabilities. According to guidelines: short, but answer user query. Not need tool calls. So final answer list capabilities."
+  }
+]

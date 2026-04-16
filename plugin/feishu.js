@@ -48,6 +48,9 @@ class FeishuService {
     // 流式回复参数
     this.streamPatchInterval = config.stream_patch_interval || 500; // patch 间隔(ms)
 
+    // chatId → sessionId 映射（支持 /new 切换新会话）
+    this._chatSessionMap = {};
+
     // 官方 SDK 客户端
     this.client = null;      // HTTP API 客户端
     this.wsClient = null;    // WebSocket 长连接客户端
@@ -171,10 +174,21 @@ class FeishuService {
   }
 
   /**
+   * 获取 chatId 对应的 sessionId
+   */
+  _getSessionId(chatId) {
+    if (!this._chatSessionMap[chatId]) {
+      this._chatSessionMap[chatId] = `feishu_${chatId}`;
+    }
+    return this._chatSessionMap[chatId];
+  }
+
+  /**
    * AI 自动回复 — 根据 stream 配置选择流式或一次性回复
    */
   async replyWithAI(chatId, userMessage, senderId) {
     const useStream = this.streamReply && this.agent?.stream;
+    const sessionId = this._getSessionId(chatId);
 
     try {
       console.log(`[Feishu] 🤖 AI processing (stream=${useStream}): ${userMessage}`);
@@ -185,9 +199,9 @@ class FeishuService {
       }
 
       if (useStream) {
-        await this.replyWithStream(chatId, userMessage);
+        await this.replyWithStream(chatId, userMessage, sessionId);
       } else {
-        await this.replyWithNormal(chatId, userMessage);
+        await this.replyWithNormal(chatId, userMessage, sessionId);
       }
     } catch (error) {
       console.error('[Feishu] AI reply failed:', error.message);
@@ -198,10 +212,16 @@ class FeishuService {
   /**
    * 一次性回复（非流式） — 使用交互式卡片
    */
-  async replyWithNormal(chatId, userMessage) {
+  async replyWithNormal(chatId, userMessage, sessionId) {
     const result = await this.agent.decide(userMessage, {
+      sessionId,
       appendSystemPrompt: '用户在飞书发送消息，参考用户偏好和习惯记录',
     });
+
+    // /new 指令：更新 chatId → sessionId 映射
+    if (result.command === 'new' && result.sessionId) {
+      this._chatSessionMap[chatId] = result.sessionId;
+    }
 
     const reply = result.reply || result.response || '收到！';
     await this.sendCardMessage(chatId, reply);
@@ -211,7 +231,7 @@ class FeishuService {
   /**
    * 流式回复 — 发交互式卡片占位 → 逐 chunk patch 更新卡片 → 打字机效果
    */
-  async replyWithStream(chatId, userMessage) {
+  async replyWithStream(chatId, userMessage, sessionId) {
     // 1. 发占位卡片消息，拿到 message_id
     const msgRes = await this.sendCardMessage(chatId, '🤔 思考中...');
     const messageId = msgRes?.data?.message_id;
@@ -219,8 +239,12 @@ class FeishuService {
     if (!messageId) {
       console.warn('[Feishu] Failed to get message_id for stream reply, fallback to normal');
       const result = await this.agent.decide(userMessage, {
+        sessionId,
         appendSystemPrompt: '用户在飞书发送消息，参考用户偏好和习惯记录',
       });
+      if (result.command === 'new' && result.sessionId) {
+        this._chatSessionMap[chatId] = result.sessionId;
+      }
       await this.sendCardMessage(chatId, result.reply || result.response || '收到！');
       return;
     }
@@ -247,6 +271,7 @@ class FeishuService {
     // 3. 调用 CoreAgent.decide，传入 onChunk 回调
     try {
       const result = await this.agent.decide(userMessage, {
+        sessionId,
         appendSystemPrompt: '用户在飞书发送消息，参考用户偏好和习惯记录',
         onChunk: (text) => {
           buffer += text;
