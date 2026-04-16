@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import yaml from 'yaml';
 import dotenv from 'dotenv';
-import QwenAgent from './services/qwen-agent.js';
+import CoreAgent from './services/coreagent.js';
 import Scheduler from './services/scheduler.js';
 import Heartbeat from './services/heartbeat.js';
 import MemoryService from './services/memory.js';
@@ -17,7 +17,7 @@ dotenv.config();
 class SmartHomeAgent {
   constructor() {
     this.config = null;
-    this.qwen = null;
+    this.agent = null;
     this.scheduler = null;
     this.heartbeat = null;
     this.memory = null;
@@ -36,19 +36,22 @@ class SmartHomeAgent {
     // 2. 初始化记忆服务
     this.memory = new MemoryService(this.config.memory);
     await this.memory.init();
-    
-    // 3. 初始化 Qwen Agent
-    this.qwen = new QwenAgent(this.config.qwen);
-    
+
+    // 3. 初始化 CoreAgent - 使用配置中的模型
+    const modelConfig = this._buildModelConfig();
+    this.agent = new CoreAgent(modelConfig);
+    this.agent.setMemory(this.memory);
+    await this.agent.init();
+
     // 4. 初始化调度器
     this.scheduler = new Scheduler();
-    
+
     // 5. 初始化心跳
-    this.heartbeat = new Heartbeat(this.qwen, this.config.heartbeat);
-    
+    this.heartbeat = new Heartbeat(this.agent, this.config.heartbeat);
+
     // 6. 初始化飞书服务
     if (this.config.plugins?.feishu?.enabled) {
-      this.feishu = new FeishuService(this.config.plugins.feishu, this.qwen);
+      this.feishu = new FeishuService(this.config.plugins.feishu, this.agent);
     }
     
     console.log('[Agent] Initialized');
@@ -112,6 +115,7 @@ class SmartHomeAgent {
         qwen: agentConfig.qwen || {},
         mcp: agentConfig.mcp || {},
         memory: agentConfig.memory || {},
+        models: agentConfig.models || {},
         heartbeat: heartbeatConfig.heartbeat || {},
         cron: cronConfig.cron || {},
         plugins: pluginConfig.plugins || {},
@@ -122,6 +126,68 @@ class SmartHomeAgent {
       console.error('[Agent] Config load error:', error.message);
       throw error;
     }
+  }
+
+  /**
+   * 从配置中构建模型配置
+   *
+   * default 格式为 "provider/modelId"，其中 provider 是配置中的顶级键，
+   * modelId 是该 provider 下某个模型条目的 id 字段。
+   * 例如: "navida/openai/gpt-oss-120b" → provider=navida, modelId=openai/gpt-oss-120b
+   */
+  _buildModelConfig() {
+    const models = this.config.models || {};
+    const defaultModelId = models.default;
+
+    if (!defaultModelId) {
+      throw new Error('No default model configured');
+    }
+
+    // 从 default 中分离 provider 前缀与实际模型 ID
+    const slashIndex = defaultModelId.indexOf('/');
+    let providerName;
+    let modelId;
+
+    if (slashIndex !== -1) {
+      providerName = defaultModelId.slice(0, slashIndex);
+      modelId = defaultModelId.slice(slashIndex + 1);
+    } else {
+      // 没有 provider 前缀，遍历所有 provider 查找
+      providerName = null;
+      modelId = defaultModelId;
+    }
+
+    let modelConfig = null;
+
+    if (providerName) {
+      // 在指定 provider 中查找
+      const providerModels = models[providerName];
+      if (providerModels && Array.isArray(providerModels)) {
+        modelConfig = providerModels.find(m => m.id === modelId || m.id === defaultModelId);
+      }
+    }
+
+    // 若未找到，遍历所有 provider
+    if (!modelConfig) {
+      for (const [key, providerModels] of Object.entries(models)) {
+        if (key === 'default' || !Array.isArray(providerModels)) continue;
+        modelConfig = providerModels.find(m => m.id === modelId || m.id === defaultModelId);
+        if (modelConfig) break;
+      }
+    }
+
+    if (!modelConfig) {
+      throw new Error(`Model ${defaultModelId} not found in config`);
+    }
+
+    console.log(`[Agent] Using model: ${modelConfig.id}`);
+
+    return {
+      name: 'SmartHomeClaw',
+      model: modelConfig.id,
+      baseUrl: modelConfig.baseUrl,
+      apiKey: modelConfig.apiKey,
+    };
   }
 
   /**
@@ -145,42 +211,14 @@ class SmartHomeAgent {
   async thinkAndAct(prompt, options = {}) {
     try {
       console.log(`[Agent] Thinking: ${prompt}`);
-      
-      // 获取记忆上下文
-      const memoryContext = await this.memory.getAll();
-      
-      // 构建 System Prompt
-      const systemPrompt = `
-你是 SmartHomeClaw 智能家居 AI 助手。
-你有以下能力：
-1. 控制智能家居设备 (通过 MCP)
-2. 学习用户习惯
-3. 自主决策优化居住环境
-4. 记录和更新记忆
 
-规则：
-- 优先参考 memory/ 中的用户偏好
-- 发现新习惯时自动记录到 HABITS.md
-- 保持克制，只在必要时采取行动
-- 通过 MCP Tools 控制设备
-`.trim();
+      if (!this.agent) {
+        throw new Error('Agent not initialized');
+      }
 
-      // AI 决策
-      const memoryContextText = `用户偏好：${memoryContext.userProfile || '无'}
-习惯记录：${memoryContext.habits || '无'}
-家居信息：${memoryContext.facts || '无'}`;
-
-      const decision = await this.qwen.decide(prompt, {
-        systemPrompt,
-        appendSystemPrompt: memoryContextText,
-        ...options,
-      });
-
+      const decision = await this.agent.decide(prompt, options);
       console.log('[Agent] Decision:', decision);
-      
-      // 记录决策结果
-      // 注意：AI 会通过 MCP 自动执行设备控制，无需手动处理
-      
+
       return decision;
     } catch (error) {
       console.error('[Agent] ThinkAndAct error:', error.message);

@@ -6,12 +6,12 @@ import * as lark from '@larksuiteoapi/node-sdk';
  * 无需公网 IP，本地即可运行
  */
 class FeishuService {
-  constructor(config, qwenAgent) {
+  constructor(config, agent) {
     this.appId = config.app_id || process.env.FEISHU_APP_ID;
     this.appSecret = config.app_secret || process.env.FEISHU_APP_SECRET;
     this.enableListener = config.enable_listener !== false;
     this.autoReply = config.auto_reply !== false;
-    this.qwen = qwenAgent;
+    this.agent = agent;
     
     // 官方 SDK 客户端
     this.client = null;      // HTTP API 客户端
@@ -70,7 +70,11 @@ class FeishuService {
     console.log('[Feishu] Stopping...');
     
     if (this.wsClient) {
-      this.wsClient.stop();
+      if (typeof this.wsClient.stop === 'function') {
+        this.wsClient.stop();
+      } else if (typeof this.wsClient.disconnect === 'function') {
+        this.wsClient.disconnect();
+      }
       this.wsClient = null;
     }
     
@@ -140,36 +144,24 @@ class FeishuService {
   async replyWithAI(chatId, userMessage, senderId) {
     try {
       console.log(`[Feishu] 🤖 AI processing: ${userMessage}`);
-      
-      // 调用 AI 决策
-      const result = await this.qwen.decide(`
-用户在飞书发送消息: "${userMessage}"
 
-你是 SmartHomeClaw 智能家居 AI 助手。
-规则：
-1. 如果是设备控制请求，通过 MCP 执行
-2. 如果是闲聊，友好回复
-3. 如果发现用户习惯，记录到 HABITS.md
-4. 回复要简洁友好
+      if (this.agent && typeof this.agent.decide === 'function') {
+        const result = await this.agent.decide(userMessage, {
+          appendSystemPrompt: '用户在飞书发送消息，参考用户偏好和习惯记录',
+        });
 
-请返回 JSON:
-{
-  "type": "reply" | "action" | "none",
-  "reply": "回复内容",
-  "action": "执行的动作 (如果有)",
-  "reason": "为什么这样处理"
-}
-`, {
-        appendSystemPrompt: '参考用户偏好和习惯记录',
-      });
-
-      const reply = result.reply || result.response || '收到！';
-      
-      await this.sendMessage(chatId, reply);
-      console.log(`[Feishu] ✅ AI reply sent: ${reply}`);
+        const reply = result.reply || result.response || '收到！';
+        await this.sendMessage(chatId, reply);
+        console.log(`[Feishu] ✅ AI reply sent: ${reply}`);
+      } else if (this.agent && typeof this.agent.chat === 'function') {
+        const reply = await this.agent.chat(userMessage);
+        await this.sendMessage(chatId, reply);
+        console.log(`[Feishu] ✅ AI reply sent: ${reply}`);
+      } else {
+        await this.sendMessage(chatId, 'AI 服务未初始化');
+      }
     } catch (error) {
       console.error('[Feishu] AI reply failed:', error.message);
-      // 发送默认回复
       await this.sendMessage(chatId, '抱歉，我遇到了一些问题，请稍后再试。');
     }
   }

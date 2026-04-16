@@ -11,21 +11,29 @@
   "modelProviders": {
     "openai": [
       {
-        "id": "qwen/qwen3-coder-480b-a35b-instruct",
-        "name": "qwen/qwen3-coder-480b-a35b-instruct",
+        "id": "minimaxai/minimax-m2.5",
+        "name": "minimaxai/minimax-m2.5",
         "baseUrl": "https://nvidia1.guiguihao.cc.cd/v1",
         "envKey": "OPENROUTER_API_KEY",
+        "description": "通过 nvidia1 使用 Qwen3.5-Coder"
+      },
+       {
+        "id": "ZhipuAI/GLM-5.1",
+        "name": "ZhipuAI/GLM-5.1",
+        "baseUrl": "https://mota.guiguihao.cc.cd/v1",
+        "envKey": "mota_API_KEY",
         "description": "通过 nvidia1 使用 Qwen3.5-Coder"
       }
     ]
   },
   "env": {
-    "OPENROUTER_API_KEY": "sk-or-v1-xxxxxx"
+    "OPENROUTER_API_KEY": "sk-or-v1-xxxxxx",
+    "mota_API_KEY":"mota"
   },
   "mcpServers": {},
   "$version": 3,
   "model": {
-    "name": "coder"
+    "name": "ZhipuAI/GLM-5.1"
   },
   "security": {
     "auth": {

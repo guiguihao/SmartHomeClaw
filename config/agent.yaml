@@ -22,3 +22,15 @@ memory:
   user_profile: "USER_PROFILE.md"
   habits: "HABITS.md"
   facts: "FACTS.md"
+
+# 语言模型配置
+models:
+  default: "navida/openai/gpt-oss-120b"
+  navida:
+    - id: "openai/gpt-oss-120b"
+      name: "openai/gpt-oss-120b"
+      baseUrl: "https://nvidia1.guiguihao.cc.cd/v1"
+      apiKey: "sk-or-v1-xxxxxx"
+      description: "..."
+
+  

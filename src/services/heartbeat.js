@@ -5,12 +5,13 @@ import cron from 'node-cron';
  * 定期执行系统自检和环境优化检查
  */
 class Heartbeat {
-  constructor(qwenAgent, config = {}) {
-    this.qwen = qwenAgent;
+  constructor(agent, config = {}) {
+    this.agent = agent;
     this.enabled = config.enabled !== false;
-    this.interval = config.interval || '*/5 * * * *'; // 默认每5分钟
+    this.interval = config.interval || '*/5 * * * *';
     this.checks = config.checks || [];
     this.task = null;
+    this.taskContent = '';
   }
 
   /**
@@ -48,20 +49,32 @@ class Heartbeat {
    */
   async beat() {
     console.log('[Heartbeat] Beat...');
-    
+
     for (const check of this.checks) {
       try {
         console.log(`[Heartbeat] Check: ${check.name}`);
-        
-        const result = await this.qwen.decide(check.prompt, {
-          appendSystemPrompt: `当前检查项: ${check.name}`,
-        });
 
-        console.log(`[Heartbeat] ${check.name} result:`, result);
+        if (this.agent && typeof this.agent.decide === 'function') {
+          const result = await this.agent.decide(check.prompt, {
+            appendSystemPrompt: `当前检查项: ${check.name}`,
+          });
+          console.log(`[Heartbeat] ${check.name} result:`, result);
+        } else if (this.agent && typeof this.agent.runBackgroundTask === 'function') {
+          const result = await this.agent.runBackgroundTask(check.prompt);
+          console.log(`[Heartbeat] ${check.name} result:`, result);
+        }
       } catch (error) {
         console.error(`[Heartbeat] Check failed (${check.name}):`, error.message);
       }
     }
+  }
+
+  getTaskContent() {
+    return this.taskContent;
+  }
+
+  setTaskContent(content) {
+    this.taskContent = content;
   }
 
   /**
