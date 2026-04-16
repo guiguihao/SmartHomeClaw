@@ -507,8 +507,9 @@ class CoreAgent {
       }
 
       // 根据是否流式选择不同的调用方式
+      const onChunk = options.onChunk || null;
       const choice = this.stream
-        ? await this._handleStreamRequest(requestOptions)
+        ? await this._handleStreamRequest(requestOptions, onChunk)
         : await this._handleNormalRequest(requestOptions);
 
       const msgToStore = {
@@ -587,9 +588,10 @@ class CoreAgent {
   /**
    * 流式请求 — 逐 chunk 拼接 content / tool_calls / reasoning_content
    * @param {object} requestOptions - API 请求参数
+   * @param {Function} [onChunk] - 可选回调，每收到一个 content chunk 就调用 onChunk(text)
    * @returns {object} 解析后的 choice 数据 { role, content, tool_calls, reasoning_content }
    */
-  async _handleStreamRequest(requestOptions) {
+  async _handleStreamRequest(requestOptions, onChunk) {
     const stream = await this.client.chat.completions.create(requestOptions);
 
     let content = '';
@@ -622,8 +624,9 @@ class CoreAgent {
         }
       }
 
-      // 实时输出到终端
+      // 回调通知 + 终端输出
       if (delta.content) {
+        if (onChunk) onChunk(delta.content);
         process.stdout.write(delta.content);
       }
     }
