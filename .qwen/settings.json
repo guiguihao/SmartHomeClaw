@@ -62,7 +62,7 @@
   "mcpServers": {},
   "$version": 3,
   "model": {
-    "name": "deepseek-ai/DeepSeek-V3.2"
+    "name": "ZhipuAI/GLM-5.1"
   },
   "security": {
     "auth": {

@@ -7,23 +7,212 @@ import * as lark from '@larksuiteoapi/node-sdk';
  */
 
 /**
- * 构建飞书交互式卡片 JSON
- * @param {string} text - 显示文本
+ * 飞书专用追加提示词
+ * lark_md 语法有限，但飞书卡片支持原生 table 组件展示表格
+ */
+const FEISHU_SYSTEM_PROMPT = `用户在飞书发送消息，参考用户偏好和习惯记录。
+
+### 输出格式要求
+你的回复将通过飞书卡片渲染。文本部分使用 lark_md，表格部分使用卡片原生 table 组件。
+
+lark_md 仅支持以下语法：
+- 加粗 **text**、斜体 *text*、删除线 ~~text~~
+- 无序列表 - text 或 * text
+- 有序列表 1. text
+- 行内代码 \`code\`（不支持多行代码块）
+- 链接 [text](url)
+- 颜色 <font color='red'>text</font>（支持 red/green/grey/orange/blue/purple）
+
+❌ lark_md 不支持：标题 #、引用 >、分割线 ---、代码块 \`\`\`、任务列表 - [ ]
+
+表格请使用标准 Markdown 表格语法，我们会自动转为飞书卡片原生 table：
+| DID | 别名 | 型号 | 房间 | 楼层 | 备注 |
+|-----|------|------|------|------|------|
+| 1001 | 温控器 | RL-01 | 餐厅 | -1F | 自动模式 |`;
+
+/**
+ * 解析 Markdown 表格的一行
+ * @param {string} line - 如 "| DID | 别名 | 型号 |" 或 "| 1001 | 温控器 | RL-01 |"
+ * @returns {Array<string>} 单元格内容数组
+ */
+function parseTableRow(line) {
+  const trimmed = line.trim();
+  const inner = trimmed.startsWith('|') ? trimmed.slice(1) : trimmed;
+  const inner2 = inner.endsWith('|') ? inner.slice(0, -1) : inner;
+  return inner2.split('|').map(c => c.trim());
+}
+
+/**
+ * 判断一行是否是 Markdown 表格分隔行（|---|---|）
+ */
+function isTableSeparatorLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('|')) return false;
+  const inner = trimmed.slice(1);
+  const inner2 = inner.endsWith('|') ? inner.slice(0, -1) : inner;
+  const cells = inner2.split('|').map(c => c.trim());
+  return cells.length > 0 && cells.every(c => /^[\s\-:]+$/.test(c));
+}
+
+/**
+ * 将 Markdown 表格转为飞书卡片 table 组件
+ * @param {string} headerLine - 表头行
+ * @param {Array<string>} dataLines - 数据行数组
+ * @returns {object} 飞书卡片 table 元素
+ */
+function markdownTableToFeishuTable(headerLine, dataLines) {
+  const headers = parseTableRow(headerLine);
+  const columns = headers.map((h, idx) => ({
+    name: `col_${idx}`,
+    display_name: h,
+    data_type: 'text',
+    width: 'auto',
+  }));
+
+  const rows = dataLines.map(line => {
+    const cells = parseTableRow(line);
+    const row = {};
+    columns.forEach((col, idx) => {
+      row[col.name] = cells[idx] || '–';
+    });
+    return row;
+  });
+
+  return {
+    tag: 'table',
+    page_size: rows.length > 5 ? 5 : rows.length,
+    columns,
+    rows,
+  };
+}
+
+/**
+ * 将 AI 输出的 Markdown 文本拆分为飞书卡片元素数组
+ * 表格 → table 组件；其他文本 → lark_md div
+ * @param {string} text - Markdown 文本
+ * @returns {Array} 飞书卡片 elements 数组
+ */
+function parseMarkdownToCardElements(text) {
+  if (!text || typeof text !== 'string') {
+    return [{ tag: 'div', text: { tag: 'lark_md', content: text || '无内容' } }];
+  }
+
+  const lines = text.split('\n');
+  const elements = [];
+  let i = 0;
+
+  // 表格收集状态
+  let tableHeaderLine = null;
+  let tableDataLines = [];
+  let inTable = false;
+
+  // 段落收集状态
+  let paragraphLines = [];
+
+  function flushParagraph() {
+    if (paragraphLines.length === 0) return;
+    const content = paragraphLines.join('\n');
+    // 去除 lark_md 不支持的语法
+    const cleaned = cleanLarkMd(content);
+    elements.push({ tag: 'div', text: { tag: 'lark_md', content: cleaned } });
+    paragraphLines = [];
+  }
+
+  function flushTable() {
+    if (!tableHeaderLine || tableDataLines.length === 0) {
+      inTable = false;
+      tableHeaderLine = null;
+      tableDataLines = [];
+      return;
+    }
+    elements.push(markdownTableToFeishuTable(tableHeaderLine, tableDataLines));
+    inTable = false;
+    tableHeaderLine = null;
+    tableDataLines = [];
+  }
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // ── 表格行 ──
+    if (line.trim().startsWith('|')) {
+      flushParagraph();
+
+      if (isTableSeparatorLine(line)) {
+        // 分隔行，跳过（已处于表格模式中）
+        i++;
+        continue;
+      }
+
+      if (!inTable) {
+        // 表头行开始
+        inTable = true;
+        tableHeaderLine = line;
+      } else {
+        // 数据行
+        tableDataLines.push(line);
+      }
+      i++;
+      continue;
+    } else if (inTable) {
+      // 表格结束（当前行不是表格行）
+      flushTable();
+      // 不跳过当前行，继续处理
+    }
+
+    // ── 普通段落 ──
+    paragraphLines.push(line);
+    i++;
+  }
+
+  // 最后 flush 所有未输出内容
+  flushParagraph();
+  flushTable();
+
+  // 安全兜底
+  if (elements.length === 0) {
+    elements.push({ tag: 'div', text: { tag: 'lark_md', content: cleanLarkMd(text) } });
+  }
+
+  return elements;
+}
+
+/**
+ * 清理 lark_md 不支持的 Markdown 语法
+ * 移除标题符号 #、引用 >、分割线 ---、代码块 ``` 包裹等
+ * @param {string} text - 原始 Markdown
+ * @returns {string} 清理后的文本
+ */
+function cleanLarkMd(text) {
+  return text
+    // 移除标题符号（# 开头的行 → 去掉 #，保留文本）
+    .replace(/^#{1,6}\s+/gm, '')
+    // 移除引用符号
+    .replace(/^>\s+/gm, '')
+    // 移除分割线（---、***、___ 独占一行）
+    .replace(/^[-*_]{3,}\s*$/gm, '')
+    // 移除代码块包裹（```行本身），保留内容
+    .replace(/^```[\s\S]*?```$/gm, (match) => {
+      // 提取代码块内容，转为行内展示
+      const content = match.replace(/^```\w*\n?/, '').replace(/\n?```$/, '');
+      return content;
+    });
+}
+
+/**
+ * 构建飞书交互式卡片 JSON（智能解析 Markdown，表格用原生 table 组件）
+ * @param {string} text - Markdown 文本
  * @returns {string} JSON 字符串
  */
 function buildCardContent(text) {
+  const elements = parseMarkdownToCardElements(text);
   return JSON.stringify({
     config: { wide_screen_mode: true },
     header: {
       title: { tag: 'plain_text', content: '🏠 SmartHomeClaw' },
       template: 'blue',
     },
-    elements: [
-      {
-        tag: 'div',
-        text: { tag: 'lark_md', content: text },
-      },
-    ],
+    elements,
   });
 }
 
@@ -49,9 +238,10 @@ class FeishuService {
     // chatId → sessionId 映射（支持 /new 切换新会话）
     this._chatSessionMap = {};
 
-    // 消息去重：避免飞书重复投递相同消息
-    // key: `${chatId}_${messageId}` 或 `${chatId}_${hash(content)}`
-    this._processedMessageSet = new Set();
+    // 消息去重：避免飞书重复投递相同消息（飞书保证 at-least-once 投递，可能重复）
+    // 使用 Map(key → timestamp) 而非 Set，支持按时间过期
+    this._processedMessageMap = new Map(); // key: `${chatId}_${messageId}` → 处理时间戳
+    this._dedupTTL = 10 * 60 * 1000; // 去重窗口：10分钟（覆盖飞书最长重试间隔）
     this._dedupCleanInterval = null;
 
     this.client = null;      // HTTP API 客户端
@@ -115,7 +305,7 @@ class FeishuService {
       clearInterval(this._dedupCleanInterval);
       this._dedupCleanInterval = null;
     }
-    this._processedMessageSet.clear();
+    this._processedMessageMap.clear();
 
     if (this.wsClient) {
       if (typeof this.wsClient.stop === 'function') {
@@ -136,15 +326,22 @@ class FeishuService {
    */
   _startDedupCleaner() {
     if (this._dedupCleanInterval) clearInterval(this._dedupCleanInterval);
+    // 每 2 分钟清理过期记录（超过 TTL 的）
     this._dedupCleanInterval = setInterval(() => {
-      // 每5分钟清理一次，但实际我们的 Set 会持续累积
-      // 如果消息量很大，可以改为使用 Map 记录时间戳，清理超过5分钟的
-      // 目前先简单实现，只在 Set 过大时清理
-      if (this._processedMessageSet.size > 1000) {
-        console.log(`[Feishu] Dedup cache too large (${this._processedMessageSet.size}), clearing...`);
-        this._processedMessageSet.clear();
+      const now = Date.now();
+      const expiredKeys = [];
+      for (const [key, ts] of this._processedMessageMap) {
+        if (now - ts > this._dedupTTL) {
+          expiredKeys.push(key);
+        }
       }
-    }, 5 * 60 * 1000); // 5分钟
+      if (expiredKeys.length > 0) {
+        for (const key of expiredKeys) {
+          this._processedMessageMap.delete(key);
+        }
+        console.log(`[Feishu] Dedup: cleaned ${expiredKeys.length} expired entries, ${this._processedMessageMap.size} remaining`);
+      }
+    }, 2 * 60 * 1000);
   }
 
   /**
@@ -155,23 +352,24 @@ class FeishuService {
    * @returns {boolean} true 表示已处理过，应该跳过
    */
   _isDuplicateMessage(chatId, msgData, content) {
-    // 优先使用 message_id
     const messageId = msgData.message_id || msgData.msg_id;
     let key = `${chatId}_${messageId}`;
 
-    // 如果无 message_id，使用 chatId+内容哈希（简易）和时间窗口
+    // 如果无 message_id，使用 chatId+内容哈希
     if (!messageId) {
       const hash = this._simpleHash(content);
       key = `${chatId}_${hash}`;
     }
 
-    if (this._processedMessageSet.has(key)) {
-      console.log(`[Feishu] Duplicate message detected (key=${key}), skipping...`);
+    // 检查是否已处理且未过期
+    const lastProcessed = this._processedMessageMap.get(key);
+    if (lastProcessed && (Date.now() - lastProcessed < this._dedupTTL)) {
+      console.log(`[Feishu] Duplicate message detected (key=${key}, age=${Math.round((Date.now() - lastProcessed) / 1000)}s), skipping...`);
       return true;
     }
 
-    // 标记为已处理
-    this._processedMessageSet.add(key);
+    // 标记为已处理（记录时间戳而非简单标记）
+    this._processedMessageMap.set(key, Date.now());
     return false;
   }
 
@@ -291,7 +489,7 @@ class FeishuService {
   async replyWithNormal(chatId, userMessage, sessionId) {
     const result = await this.agent.decide(userMessage, {
       sessionId,
-      appendSystemPrompt: '用户在飞书发送消息，参考用户偏好和习惯记录',
+      appendSystemPrompt: FEISHU_SYSTEM_PROMPT,
     });
 
     // /new 指令：更新 chatId → sessionId 映射
@@ -316,7 +514,7 @@ class FeishuService {
       console.warn('[Feishu] Failed to get message_id for stream reply, fallback to normal');
       const result = await this.agent.decide(userMessage, {
         sessionId,
-        appendSystemPrompt: '用户在飞书发送消息，参考用户偏好和习惯记录',
+        appendSystemPrompt: FEISHU_SYSTEM_PROMPT,
       });
       if (result.command === 'new' && result.sessionId) {
         this._chatSessionMap[chatId] = result.sessionId;
@@ -348,7 +546,7 @@ class FeishuService {
     try {
       const result = await this.agent.decide(userMessage, {
         sessionId,
-        appendSystemPrompt: '用户在飞书发送消息，参考用户偏好和习惯记录',
+        appendSystemPrompt: FEISHU_SYSTEM_PROMPT,
         onChunk: (text) => {
           buffer += text;
         },

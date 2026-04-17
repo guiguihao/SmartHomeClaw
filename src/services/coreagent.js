@@ -537,6 +537,7 @@ class CoreAgent {
     }
 
     const messages = [{ role: 'system', content: systemPrompt }];
+    console.log(`[system] 输入: ${JSON.stringify(messages)}`);
     messages.push(...this._normalizeMessages(trimmedHistory));
 
     const tools = this._getAllTools();
