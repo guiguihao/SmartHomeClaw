@@ -56,6 +56,7 @@ function isTableSeparatorLine(line) {
 
 /**
  * 将 Markdown 表格转为飞书卡片 table 组件
+ * 飞书 table 单元格只支持纯文本，需清理 <font> 等 HTML 标签
  * @param {string} headerLine - 表头行
  * @param {Array<string>} dataLines - 数据行数组
  * @returns {object} 飞书卡片 table 元素
@@ -64,7 +65,7 @@ function markdownTableToFeishuTable(headerLine, dataLines) {
   const headers = parseTableRow(headerLine);
   const columns = headers.map((h, idx) => ({
     name: `col_${idx}`,
-    display_name: h,
+    display_name: cleanTableCell(h),
     data_type: 'text',
     width: 'auto',
   }));
@@ -73,7 +74,7 @@ function markdownTableToFeishuTable(headerLine, dataLines) {
     const cells = parseTableRow(line);
     const row = {};
     columns.forEach((col, idx) => {
-      row[col.name] = cells[idx] || '–';
+      row[col.name] = cleanTableCell(cells[idx] || '–');
     });
     return row;
   });
@@ -84,6 +85,18 @@ function markdownTableToFeishuTable(headerLine, dataLines) {
     columns,
     rows,
   };
+}
+
+/**
+ * 清理表格单元格中的 HTML 标签（飞书 table 只支持纯文本）
+ * 移除 <font> 等标签，保留文本内容
+ * @param {string} text - 单元格文本
+ * @returns {string} 清理后的纯文本
+ */
+function cleanTableCell(text) {
+  if (!text) return '–';
+  // 移除 <font> 标签，保留内容
+  return text.replace(/<font[^>]*>([\s\S]*?)<\/font>/g, '$1');
 }
 
 /**
@@ -180,11 +193,19 @@ function parseMarkdownToCardElements(text) {
 /**
  * 清理 lark_md 不支持的 Markdown 语法
  * 移除标题符号 #、引用 >、分割线 ---、代码块 ``` 包裹等
+ * 保留 <font color> 标签（飞书支持）
  * @param {string} text - 原始 Markdown
  * @returns {string} 清理后的文本
  */
 function cleanLarkMd(text) {
-  return text
+  // 先临时保存 <font> 标签，避免被误删
+  const fontTags = [];
+  const textWithPlaceholders = text.replace(/<font[^>]*>[\s\S]*?<\/font>/g, (match) => {
+    fontTags.push(match);
+    return `__FONT_${fontTags.length - 1}__`;
+  });
+
+  const cleaned = textWithPlaceholders
     // 移除标题符号（# 开头的行 → 去掉 #，保留文本）
     .replace(/^#{1,6}\s+/gm, '')
     // 移除引用符号
@@ -193,10 +214,12 @@ function cleanLarkMd(text) {
     .replace(/^[-*_]{3,}\s*$/gm, '')
     // 移除代码块包裹（```行本身），保留内容
     .replace(/^```[\s\S]*?```$/gm, (match) => {
-      // 提取代码块内容，转为行内展示
       const content = match.replace(/^```\w*\n?/, '').replace(/\n?```$/, '');
       return content;
     });
+
+  // 恢复 <font> 标签
+  return cleaned.replace(/__FONT_(\d+)__/g, (match, i) => fontTags[parseInt(i)]);
 }
 
 /**
