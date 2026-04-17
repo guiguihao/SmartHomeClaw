@@ -529,7 +529,8 @@ class FeishuService {
     let lastPatchContent = '🤔 思考中...';
 
     const flushToFeishu = async () => {
-      if (buffer === lastPatchContent) return;
+      // buffer 为空时不 patch，保持"思考中..."
+      if (!buffer || buffer === lastPatchContent) return;
       try {
         await this.patchCardMessage(messageId, buffer);
         lastPatchContent = buffer;
