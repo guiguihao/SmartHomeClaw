@@ -17,10 +17,12 @@ config/gateways.json
 .idea/
 *.swp
 *.swo
-
+.qwen
 # OS
 .DS_Store
 Thumbs.db
+
+*_back*
 
 # Logs
 *.log
