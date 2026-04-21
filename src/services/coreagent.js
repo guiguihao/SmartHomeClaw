@@ -292,6 +292,10 @@ class CoreAgent {
       return this._handleManagementTool(toolName, args);
     } else if (toolName.startsWith('mcp_')) {
       return await this._handleMCPToolCall(toolName, args);
+    } else if (toolName.startsWith('file_')) {
+      return await this._handleFileTool(toolName, args);
+    } else if (toolName.startsWith('cmd_')) {
+      return await this._handleCommandTool(toolName, args);
     }
     return `未知工具: ${toolName}`;
   }
@@ -327,6 +331,172 @@ class CoreAgent {
     }
   }
 
+  /**
+   * 处理文件工具调用
+   */
+  async _handleFileTool(toolName, args = {}) {
+    // 动态导入 fs 模块（ESM 环境）
+    const { promises: fs } = await import('fs');
+    const path = await import('path');
+
+    try {
+      switch (toolName) {
+        case 'file_read':
+          const content = await fs.readFile(args.path, 'utf8');
+          return content;
+
+        case 'file_write':
+          await fs.writeFile(args.path, args.content, 'utf8');
+          return `已写入文件: ${args.path}`;
+
+        case 'file_append':
+          await fs.appendFile(args.path, args.content, 'utf8');
+          return `已追加到文件: ${args.path}`;
+
+        case 'file_exists':
+          try {
+            await fs.access(args.path);
+            return 'true';
+          } catch {
+            return 'false';
+          }
+
+        case 'file_delete':
+          await fs.unlink(args.path);
+          return `已删除文件: ${args.path}`;
+
+        case 'file_list':
+          const files = await fs.readdir(args.path || '.');
+          return files.join('\n');
+
+        case 'file_edit':
+          return await this._editFile(fs, args.path, args);
+
+        default:
+          return `未知文件工具: ${toolName}`;
+      }
+    } catch (e) {
+      return `文件操作错误: ${e.message}`;
+    }
+  }
+
+  /**
+   * 编辑文件 - 支持行号插入/删除/替换、正则查找替换
+   * @param {object} fs - fs.promises 对象
+   * @param {string} filePath - 文件路径
+   * @param {object} args - 编辑参数
+   * @returns {string} 操作结果
+   */
+  async _editFile(fs, filePath, args) {
+    try {
+      // 读取原文件内容
+      let content = '';
+      try {
+        content = await fs.readFile(filePath, 'utf8');
+      } catch (e) {
+        if (e.code !== 'ENOENT') throw e; // 文件不存在则创建空内容
+      }
+      
+      const lines = content.split('\n');
+      
+      // 1. 行号操作 (insert_line/replace_line/delete_line)
+      if (args.insert_line !== undefined) {
+        const lineNum = parseInt(args.insert_line);
+        if (lineNum < 0 || lineNum > lines.length) {
+          return `❌ 行号超出范围 (0-${lines.length})`;
+        }
+        lines.splice(lineNum, 0, args.content || '');
+      }
+      
+      if (args.replace_line !== undefined) {
+        const lineNum = parseInt(args.replace_line);
+        if (lineNum < 0 || lineNum >= lines.length) {
+          return `❌ 行号超出范围 (0-${lines.length - 1})`;
+        }
+        lines[lineNum] = args.content || '';
+      }
+      
+      if (args.delete_line !== undefined) {
+        const lineNum = parseInt(args.delete_line);
+        if (lineNum < 0 || lineNum >= lines.length) {
+          return `❌ 行号超出范围 (0-${lines.length - 1})`;
+        }
+        lines.splice(lineNum, 1);
+      }
+      
+      // 2. 查找替换操作 (find/replace/all)
+      if (args.find) {
+        const findStr = args.find;
+        const replaceStr = args.replace || '';
+        const findAll = args.all === true;
+        
+        let replaced = false;
+        if (args.regex) {
+          // 正则表达式查找替换
+          try {
+            const regex = new RegExp(findStr, 'g'); // 默认全局匹配
+            for (let i = 0; i < lines.length; i++) {
+              if (regex.test(lines[i])) {
+                lines[i] = lines[i].replace(regex, replaceStr);
+                replaced = true;
+                if (!findAll) break;
+              }
+            }
+          } catch (e) {
+            return `❌ 正则表达式错误: ${e.message}`;
+          }
+        } else {
+          // 普通字符串查找替换
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes(findStr)) {
+              lines[i] = lines[i].replace(findStr, replaceStr);
+              replaced = true;
+              if (!findAll) break;
+            }
+          }
+        }
+        
+        if (!replaced) {
+          return `❌ 未找到匹配内容: "${findStr}"`;
+        }
+      }
+      
+      // 写入文件
+      const newContent = lines.join('\n');
+      await fs.writeFile(filePath, newContent, 'utf8');
+      return `✅ 已编辑文件: ${filePath}`;
+      
+    } catch (e) {
+      return `❌ 编辑文件失败: ${e.message}`;
+    }
+  }
+
+  /**
+   * 处理命令工具调用
+   */
+  async _handleCommandTool(toolName, args = {}) {
+    // 动态导入 child_process 模块（ESM 环境）
+    const { exec } = await import('child_process');
+    const util = await import('util');
+    const execAsync = util.promisify(exec);
+
+    try {
+      switch (toolName) {
+        case 'cmd_exec':
+          const { stdout, stderr } = await execAsync(args.command, { 
+            cwd: args.cwd || process.cwd(),
+            timeout: args.timeout || 30000,
+            maxBuffer: 1024 * 1024 // 1MB
+          });
+          return stdout || stderr || '(无输出)';
+
+        default:
+          return `未知命令工具: ${toolName}`;
+      }
+    } catch (e) {
+      return `命令执行错误: ${e.message}`;
+    }
+  }
   /**
    * 处理管理工具调用
    */

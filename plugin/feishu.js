@@ -10,25 +10,7 @@ import * as lark from '@larksuiteoapi/node-sdk';
  * 飞书专用追加提示词
  * lark_md 语法有限，但飞书卡片支持原生 table 组件展示表格
  */
-const FEISHU_SYSTEM_PROMPT = `用户在飞书发送消息，参考用户偏好和习惯记录。
-
-### 输出格式要求
-你的回复将通过飞书卡片渲染。文本部分使用 lark_md，表格部分使用卡片原生 table 组件。
-
-lark_md 仅支持以下语法：
-- 加粗 **text**、斜体 *text*、删除线 ~~text~~
-- 无序列表 - text 或 * text
-- 有序列表 1. text
-- 行内代码 \`code\`（不支持多行代码块）
-- 链接 [text](url)
-- 颜色 <font color='red'>text</font>（支持 red/green/grey/orange/blue/purple）
-
-❌ lark_md 不支持：标题 #、引用 >、分割线 ---、代码块 \`\`\`、任务列表 - [ ]
-
-表格请使用标准 Markdown 表格语法，我们会自动转为飞书卡片原生 table：
-| DID | 别名 | 型号 | 房间 | 楼层 | 备注 |
-|-----|------|------|------|------|------|
-| 1001 | 温控器 | RL-01 | 餐厅 | -1F | 自动模式 |`;
+const FEISHU_SYSTEM_PROMPT = "用户在飞书发送消息，参考用户偏好和习惯记录。\n\n### 输出格式要求\n你的回复将通过飞书卡片渲染。文本部分使用 lark_md，表格部分使用卡片原生 table 组件。\n\nlark_md 仅支持以下语法：\n- 加粗 **text**、斜体 *text*、删除线 ~~text~~\n- 无序列表 - text 或 * text\n- 有序列表 1. text\n- 行内代码 \`code\`（不支持多行代码块）\n- 链接 [text](url)\n- 颜色 <font color='red'>text</font>（支持 red/green/grey/orange/blue/purple）\n\n❌ lark_md 不支持：标题 #、引用 >、分割线 ---、代码块 \\\`\\\`\\\`、任务列表 - [ ]\n\n表格请使用标准 Markdown 表格语法，我们会自动转为飞书卡片原生 table：\n| DID | 别名 | 型号 | 房间 | 楼层 | 备注 |\n|-----|------|------|------|------|------|\n| 1001 | 温控器 | RL-01 | 餐厅 | -1F | 自动模式 |\n\n### 可用工具\n\n#### 文件操作\n- \`file_read(path)\` - 读取文件内容\n- \`file_write(path, content)\` - 写入文件\n- \`file_append(path, content)\` - 追加到文件\n- \`file_exists(path)\` - 检查文件是否存在\n- \`file_delete(path)\` - 删除文件\n- \`file_list(path)\` - 列出目录内容\n- \`file_edit(path, ...)\` - 编辑文件内容\n  - \`insert_line\`: 在指定行号前插入内容\n  - \`replace_line\`: 替换指定行号的内容\n  - \`delete_line\`: 删除指定行号的行\n  - \`find\`/\`replace\`: 查找并替换字符串\n  - \`regex: true\`: 启用正则表达式模式\n  - \`all: true\`: 替换所有匹配项（默认只替换第一个）\n\n#### 命令执行\n- \`cmd_exec(command, cwd?, timeout?)\` - 执行系统命令\n  - \`cwd\`: 工作目录（可选）\n  - \`timeout\`: 超时毫秒（默认30000）\n";
 
 /**
  * 解析 Markdown 表格的一行
@@ -64,7 +46,7 @@ function isTableSeparatorLine(line) {
 function markdownTableToFeishuTable(headerLine, dataLines) {
   const headers = parseTableRow(headerLine);
   const columns = headers.map((h, idx) => ({
-    name: `col_${idx}`,
+    name: 'col_' + idx,
     display_name: cleanTableCell(h),
     data_type: 'text',
     width: 'auto',
@@ -96,7 +78,7 @@ function markdownTableToFeishuTable(headerLine, dataLines) {
 function cleanTableCell(text) {
   if (!text) return '–';
   // 移除 <font> 标签，保留内容
-  return text.replace(/<font[^>]*>([\s\S]*?)<\/font>/g, '$1');
+  return text.replace(/<font[^>]*>(.*?)<\/font>/gi, '$1');
 }
 
 /**
@@ -200,26 +182,26 @@ function parseMarkdownToCardElements(text) {
 function cleanLarkMd(text) {
   // 先临时保存 <font> 标签，避免被误删
   const fontTags = [];
-  const textWithPlaceholders = text.replace(/<font[^>]*>[\s\S]*?<\/font>/g, (match) => {
+  const textWithPlaceholders = text.replace(/<font[^>]*>.*?<\/font>/gi, (match) => {
     fontTags.push(match);
-    return `__FONT_${fontTags.length - 1}__`;
+    return '__FONT_' + (fontTags.length - 1) + '__';
   });
 
   const cleaned = textWithPlaceholders
     // 移除标题符号（# 开头的行 → 去掉 #，保留文本）
-    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^#{1,6}\\s+/gm, '')
     // 移除引用符号
-    .replace(/^>\s+/gm, '')
+    .replace(/^>\\s+/gm, '')
     // 移除分割线（---、***、___ 独占一行）
-    .replace(/^[-*_]{3,}\s*$/gm, '')
-    // 移除代码块包裹（```行本身），保留内容
-    .replace(/^```[\s\S]*?```$/gm, (match) => {
-      const content = match.replace(/^```\w*\n?/, '').replace(/\n?```$/, '');
+    .replace(/^[-*_]{3,}\\s*$/gm, '')
+    // 移除代码块包裹（\`\`\`行本身），保留内容
+    .replace(/^\\\`\\\`\\\`[\\s\\S]*?\\\`\\\`\\\`$/gm, (match) => {
+      const content = match.replace(/^\\\`\\\`\\\`\\w*\\n?/, '').replace(/\\n?\\\`\\\`\\\`$/, '');
       return content;
     });
 
   // 恢复 <font> 标签
-  return cleaned.replace(/__FONT_(\d+)__/g, (match, i) => fontTags[parseInt(i)]);
+  return cleaned.replace(/__FONT_(\\d+)__/g, (match, i) => fontTags[parseInt(i)]);
 }
 
 /**
@@ -362,7 +344,7 @@ class FeishuService {
         for (const key of expiredKeys) {
           this._processedMessageMap.delete(key);
         }
-        console.log(`[Feishu] Dedup: cleaned ${expiredKeys.length} expired entries, ${this._processedMessageMap.size} remaining`);
+        console.log('[Feishu] Dedup: cleaned ' + expiredKeys.length + ' expired entries, ' + this._processedMessageMap.size + ' remaining');
       }
     }, 2 * 60 * 1000);
   }
@@ -376,18 +358,18 @@ class FeishuService {
    */
   _isDuplicateMessage(chatId, msgData, content) {
     const messageId = msgData.message_id || msgData.msg_id;
-    let key = `${chatId}_${messageId}`;
+    let key = chatId + '_' + messageId;
 
     // 如果无 message_id，使用 chatId+内容哈希
     if (!messageId) {
       const hash = this._simpleHash(content);
-      key = `${chatId}_${hash}`;
+      key = chatId + '_' + hash;
     }
 
     // 检查是否已处理且未过期
     const lastProcessed = this._processedMessageMap.get(key);
     if (lastProcessed && (Date.now() - lastProcessed < this._dedupTTL)) {
-      console.log(`[Feishu] Duplicate message detected (key=${key}, age=${Math.round((Date.now() - lastProcessed) / 1000)}s), skipping...`);
+      console.log('[Feishu] Duplicate message detected (key=' + key + ', age=' + Math.round((Date.now() - lastProcessed) / 1000) + 's), skipping...');
       return true;
     }
 
@@ -436,8 +418,8 @@ class FeishuService {
 
       const content = this.parseMessageContent(msgData);
 
-      console.log(`[Feishu] 📨 Message from ${senderId}: ${content}`);
-      console.log(`[Feishu] Chat ID: ${chatId}`);
+      console.log('[Feishu] 📨 Message from ' + senderId + ': ' + content);
+      console.log('[Feishu] Chat ID: ' + chatId);
 
       // 忽略机器人自己发的消息
       if (senderId && senderId === this.appId) {
@@ -446,7 +428,7 @@ class FeishuService {
 
       // 去重检查：避免重复处理相同消息
       if (this._isDuplicateMessage(chatId, msgData, content)) {
-        console.log(`[Feishu] Skip duplicate message from ${senderId}: ${content}`);
+        console.log('[Feishu] Skip duplicate message from ' + senderId + ': ' + content);
         return;
       }
 
@@ -475,7 +457,7 @@ class FeishuService {
    */
   _getSessionId(chatId) {
     if (!this._chatSessionMap[chatId]) {
-      this._chatSessionMap[chatId] = `feishu_${chatId}`;
+      this._chatSessionMap[chatId] = 'feishu_' + chatId;
     }
     return this._chatSessionMap[chatId];
   }
@@ -488,7 +470,7 @@ class FeishuService {
     const sessionId = this._getSessionId(chatId);
 
     try {
-      console.log(`[Feishu] 🤖 AI processing (stream=${useStream}): ${userMessage}`);
+      console.log('[Feishu] 🤖 AI processing (stream=' + useStream + '): ' + userMessage);
 
       if (!this.agent || typeof this.agent.decide !== 'function') {
         await this.sendTextMessage(chatId, 'AI 服务未初始化');
@@ -522,7 +504,7 @@ class FeishuService {
 
     const reply = result.reply || result.response || '收到！';
     await this.sendCardMessage(chatId, reply);
-    console.log(`[Feishu] ✅ AI reply sent`);
+    console.log('[Feishu] ✅ AI reply sent');
   }
 
   /**
@@ -558,12 +540,12 @@ class FeishuService {
         await this.patchCardMessage(messageId, buffer);
         lastPatchContent = buffer;
       } catch (e) {
-        console.warn(`[Feishu] Stream patch error: ${e.message}`);
+        console.warn('[Feishu] Stream patch error: ' + e.message);
       }
     };
 
     patchTimer = setInterval(() => {
-      flushToFeishu().catch(e => console.warn(`[Feishu] Patch timer error: ${e.message}`));
+      flushToFeishu().catch(e => console.warn('[Feishu] Patch timer error: ' + e.message));
     }, this.streamPatchInterval);
 
     // 3. 调用 CoreAgent.decide，传入 onChunk 回调
@@ -584,7 +566,7 @@ class FeishuService {
         await this.patchCardMessage(messageId, finalContent);
       }
 
-      console.log(`[Feishu] ✅ Stream reply completed`);
+      console.log('[Feishu] ✅ Stream reply completed');
     } catch (error) {
       clearInterval(patchTimer);
       try {
@@ -609,7 +591,7 @@ class FeishuService {
       });
 
       if (res.code !== 0) {
-        throw new Error(`Failed to send text message: ${res.msg}`);
+        throw new Error('Failed to send text message: ' + res.msg);
       }
 
       return res;
@@ -634,7 +616,7 @@ class FeishuService {
       });
 
       if (res.code !== 0) {
-        throw new Error(`Failed to send card message: ${res.msg}`);
+        throw new Error('Failed to send card message: ' + res.msg);
       }
 
       return res;
@@ -658,12 +640,12 @@ class FeishuService {
       });
 
       if (res.code !== 0) {
-        throw new Error(`Failed to patch card message: ${res.msg}`);
+        throw new Error('Failed to patch card message: ' + res.msg);
       }
 
       return res;
     } catch (error) {
-      console.warn(`[Feishu] Patch card message error: ${error.message}`);
+      console.warn('[Feishu] Patch card message error: ' + error.message);
       throw error;
     }
   }
