@@ -1,4 +1,6 @@
 import * as lark from '@larksuiteoapi/node-sdk';
+import * as fs from 'fs';
+import * as path from 'path';
 
 /**
  * 飞书 (Feishu/Lark) 插件
@@ -226,6 +228,75 @@ function buildCardContent(text) {
  */
 function buildTextContent(text) {
   return JSON.stringify({ text });
+}
+
+/**
+ * 从文本内容中提取本地图片路径
+ * 支持的图片格式：png, jpg, jpeg, gif, webp, bmp
+ * @param {string} text - 文本内容
+ * @returns {Array<string>} 本地图片路径数组
+ */
+function extractLocalImagePaths(text) {
+  if (!text) return [];
+  
+  const imagePaths = [];
+  
+  console.log('[Feishu] extractLocalImagePaths called with text length:', text.length);
+  
+  // 匹配更灵活的路径格式：
+  // - 支持绝对路径 /path/...
+  // - 支持相对路径 ./... 或 ../...
+  // - 支持中文路径
+  // - 支持被反引号 ` 或其他符号包裹的路径
+  // - 不区分大小写的文件扩展名
+  const patterns = [
+    // 模式1: 反引号包裹的路径，如 `path/to/image.png`
+    /`([^`]*\.(?:png|jpg|jpeg|gif|webp|bmp))`/gi,
+    // 模式2: 绝对路径 /... 或 ~/...
+    /(?:^|\s|[:：])(\/[^\s`'"]*\.(?:png|jpg|jpeg|gif|webp|bmp))(?:$|\s|[,，.。！!?？])/gi,
+    /(?:^|\s|[:：])(~\/[^\s`'"]*\.(?:png|jpg|jpeg|gif|webp|bmp))(?:$|\s|[,，.。！!?？])/gi,
+    // 模式3: 相对路径 ./... 或 ../...
+    /(?:^|\s|[:：])(\.\.?\/[^\s`'"]*\.(?:png|jpg|jpeg|gif|webp|bmp))(?:$|\s|[,，.。！!?？])/gi,
+    // 模式4: 简单路径（不带前缀但看起来像路径）
+    /(?:^|\s|[:：])([^\s`'"]*[\/\\][^\s`'"]*\.(?:png|jpg|jpeg|gif|webp|bmp))(?:$|\s|[,，.。！!?？])/gi,
+  ];
+  
+  for (const pattern of patterns) {
+    let match;
+    // 重置正则表达式的 lastIndex
+    pattern.lastIndex = 0;
+    while ((match = pattern.exec(text)) !== null) {
+      let imagePath = match[1];
+      // 展开 ~ 为用户目录
+      if (imagePath.startsWith('~/')) {
+        const homeDir = process.env.HOME || process.env.USERPROFILE;
+        if (homeDir) {
+          imagePath = path.join(homeDir, imagePath.slice(2));
+        }
+      }
+      // 验证路径是否存在
+      console.log('[Feishu] Checking path:', imagePath, 'exists:', fs.existsSync(imagePath));
+      if (fs.existsSync(imagePath)) {
+        // 去重
+        if (!imagePaths.includes(imagePath)) {
+          imagePaths.push(imagePath);
+          console.log('[Feishu] Found valid image path:', imagePath);
+        }
+      }
+    }
+  }
+  
+  console.log('[Feishu] Extracted image paths:', imagePaths);
+  return imagePaths;
+}
+
+/**
+ * 构建图片消息 JSON
+ * @param {string} imageKey - 飞书图片 key
+ * @returns {string} JSON 字符串
+ */
+function buildImageContent(imageKey) {
+  return JSON.stringify({ image_key: imageKey });
 }
 
 class FeishuService {
@@ -504,6 +575,8 @@ class FeishuService {
 
     const reply = result.reply || result.response || '收到！';
     await this.sendCardMessage(chatId, reply);
+    // 发送完文本后，检测并发送本地图片
+    await this.sendLocalImagesFromContent(chatId, reply);
     console.log('[Feishu] ✅ AI reply sent');
   }
 
@@ -565,6 +638,9 @@ class FeishuService {
       if (finalContent !== lastPatchContent) {
         await this.patchCardMessage(messageId, finalContent);
       }
+
+      // 发送完文本后，检测并发送本地图片
+      await this.sendLocalImagesFromContent(chatId, finalContent);
 
       console.log('[Feishu] ✅ Stream reply completed');
     } catch (error) {
@@ -651,13 +727,159 @@ class FeishuService {
   }
 
   /**
+   * 上传本地图片到飞书，获取 image_key
+   * @param {string} imagePath - 本地图片路径
+   * @returns {Promise<string>} 飞书 image_key
+   */
+  async uploadImage(imagePath) {
+    try {
+      console.log('[Feishu] Uploading image:', imagePath);
+      
+      const imageFile = fs.readFileSync(imagePath);
+      console.log('[Feishu] Image file read, size:', imageFile.length, 'bytes');
+      
+      // 尝试不同的 API 调用方式
+      let res;
+      
+      // 方式1: 尝试 im.v1.image.create
+      try {
+        console.log('[Feishu] Trying upload method 1: im.v1.image.create');
+        res = await this.client.im.v1.image.create({
+          data: {
+            image_type: 'message',
+            image: imageFile,
+          },
+        });
+        console.log('[Feishu] Method 1 success');
+      } catch (e1) {
+        console.log('[Feishu] Method 1 failed:', e1.message);
+        
+        // 方式2: 尝试 im.image.create (不带 v1)
+        try {
+          console.log('[Feishu] Trying upload method 2: im.image.create');
+          res = await this.client.im.image.create({
+            data: {
+              image_type: 'message',
+              image: imageFile,
+            },
+          });
+          console.log('[Feishu] Method 2 success');
+        } catch (e2) {
+          console.log('[Feishu] Method 2 failed:', e2.message);
+          throw e1; // 抛出第一个错误
+        }
+      }
+
+      console.log('[Feishu] Upload API response:', JSON.stringify(res, null, 2));
+
+      // 检查响应格式 - 可能直接返回 image_key，也可能是标准格式
+      let imageKey;
+      if (res.image_key) {
+        // 直接返回 image_key 的格式
+        imageKey = res.image_key;
+      } else if (res.code === 0 && res.data) {
+        // 标准格式
+        imageKey = res.data?.image_key || res.data?.image?.image_key;
+      } else if (res.code !== undefined && res.code !== 0) {
+        // 有错误码
+        throw new Error('Failed to upload image: ' + (res.msg || JSON.stringify(res)));
+      } else {
+        // 其他格式，尝试提取
+        imageKey = res.data?.image_key || res.data?.image?.image_key || res.image_key;
+      }
+      
+      if (!imageKey) {
+        throw new Error('No image_key found in response: ' + JSON.stringify(res));
+      }
+      
+      console.log('[Feishu] Image uploaded, image_key:', imageKey);
+      return imageKey;
+    } catch (error) {
+      console.error('[Feishu] Upload image error:', error.message);
+      if (error.response) {
+        console.error('[Feishu] Error response:', JSON.stringify(error.response, null, 2));
+      }
+      console.error('[Feishu] Upload error stack:', error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * 发送图片消息
+   * @param {string} chatId - 聊天 ID
+   * @param {string} imageKey - 飞书 image_key
+   */
+  async sendImageMessage(chatId, imageKey) {
+    try {
+      const res = await this.client.im.message.create({
+        params: { receive_id_type: 'chat_id' },
+        data: {
+          receive_id: chatId,
+          msg_type: 'image',
+          content: buildImageContent(imageKey),
+        },
+      });
+
+      if (res.code !== 0) {
+        throw new Error('Failed to send image message: ' + res.msg);
+      }
+
+      console.log('[Feishu] Image message sent');
+      return res;
+    } catch (error) {
+      console.error('[Feishu] Send image message error:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * 检测内容中的本地图片并发送
+   * @param {string} chatId - 聊天 ID
+   * @param {string} text - 文本内容
+   */
+  async sendLocalImagesFromContent(chatId, text) {
+    try {
+      console.log('[Feishu] sendLocalImagesFromContent called, chatId:', chatId);
+      console.log('[Feishu] Content to check for images:', text);
+      
+      const imagePaths = extractLocalImagePaths(text);
+      
+      if (imagePaths.length === 0) {
+        console.log('[Feishu] No local images found in content');
+        return;
+      }
+
+      console.log('[Feishu] Found ' + imagePaths.length + ' local image(s) to send:', imagePaths);
+
+      for (const imagePath of imagePaths) {
+        try {
+          console.log('[Feishu] Processing image:', imagePath);
+          const imageKey = await this.uploadImage(imagePath);
+          console.log('[Feishu] Uploaded image, key:', imageKey);
+          await this.sendImageMessage(chatId, imageKey);
+          console.log('[Feishu] Image sent successfully');
+        } catch (e) {
+          console.error('[Feishu] Failed to send image ' + imagePath + ':', e.message);
+          // 继续发送下一张图片，不因单张失败而中断
+        }
+      }
+    } catch (error) {
+      console.error('[Feishu] Send local images error:', error.message);
+      // 不抛出错误，避免影响主消息发送
+    }
+  }
+
+  /**
    * 主动发送消息 (供外部调用)
    */
   async send(chatId, text) {
     if (!this.client) {
       throw new Error('[Feishu] Not initialized');
     }
-    return this.sendCardMessage(chatId, text);
+    const res = await this.sendCardMessage(chatId, text);
+    // 发送文本后，检测并发送本地图片
+    await this.sendLocalImagesFromContent(chatId, text);
+    return res;
   }
 }
 
