@@ -23,11 +23,12 @@ models:
   default: "nvidia/openai/gpt-oss-120b"
   providers:
     - name: volcengine
-      base_url: "https://ark.cn-beijing.volces.com/api/coding/v3"
-      api_key_env: "VOLCENGINE_API_KEY"
+      base_url: "https://integrate.api.nvidia.com/v1"
+      api_key_env: "NVIDIA_API_KEY"
       models:
-        - id: "DeepSeek-V3.2"
+        - id: "openai/gpt-oss-120b"
           thinking: true    # 是否开启思考模式 (extended thinking / reasoning)
           stream: true      # 是否开启流式输出
+
 
   
