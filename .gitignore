@@ -12,6 +12,8 @@ sessions/*
 *.log
 npm-debug.log*
 
+*_back*
+
 # OS
 .DS_Store
 Thumbs.db
