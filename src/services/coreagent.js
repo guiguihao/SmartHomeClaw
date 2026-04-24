@@ -104,8 +104,8 @@ class CoreAgent {
       .replace('{time}', new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }));
   }
 
-  async _getAllTools() {
-    const tools = [];
+  async _getAllTools(filter = null) {
+    let tools = [];
 
     if (this._memoryService) {
       tools.push(
@@ -359,6 +359,11 @@ class CoreAgent {
     // MCP 工具
     if (this._mcpTools.length > 0) {
       tools.push(...this._mcpTools);
+    }
+
+    // 应用过滤器
+    if (typeof filter === 'function') {
+      tools = tools.filter(filter);
     }
 
     return tools;
@@ -849,7 +854,7 @@ class CoreAgent {
 
     messages.push(...this._normalizeMessages(trimmedHistory));
 
-    const tools = await this._getAllTools();
+    const tools = await this._getAllTools(options.toolFilter);
     let finalResponse = '';
 
     for (let i = 0; i < this.maxToolIterations; i++) {

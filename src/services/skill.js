@@ -107,15 +107,27 @@ class SkillService {
         
         console.log(`[Skill] Executing Standard Markdown skill: ${name}`);
         
-        const prompt = `你现在正在使用 "${name}" 技能。
+        const prompt = `你现在正在执行 "${name}" 技能的内部逻辑。
 技能描述: ${metadata?.description || '无'}
-参考手册/示例:
+参考手册/运行指令:
 ${content}
 
-请根据以上信息，结合用户参数 ${JSON.stringify(params)} 并在必要时调用 cmd_exec 或其它工具来完成任务。`;
+### 重要指令：
+1. **禁止递归**：你已经在 "${name}" 技能内部了。严禁再次调用 "skill_run"、"baidu_search" 或任何技能相关的工具。
+2. **直接执行**：请根据参考手册，直接使用 "cmd_exec" 工具运行相应的终端命令（如 Python 脚本）来获取结果。
+3. **参数应用**：结合用户提供的参数 ${JSON.stringify(params)} 构造命令。
+
+请立即执行命令并汇报结果。`;
 
         return await agent.decide(prompt, {
-          appendSystemPrompt: `你已临时获得 "${name}" 技能的专业知识，请严格按照其提供的最佳实践行动。`,
+          appendSystemPrompt: `你现在是 "${name}" 技能的执行专家。请严格按照手册通过 cmd_exec 完成任务，严禁二次调用技能工具。`,
+          toolFilter: (tool) => {
+            // 严禁在技能内部调用 skill_run 或任何具体技能映射工具 (如 baidu_search)
+            const isSkillTool = tool.function.name === 'skill_run' || 
+                                tool.function.name === 'skill_list' ||
+                                tool.function.description?.includes('[Skill]');
+            return !isSkillTool;
+          }
         });
       }
     } catch (error) {
