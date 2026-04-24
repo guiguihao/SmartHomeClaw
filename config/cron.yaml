@@ -2,26 +2,26 @@
 
 cron:
   tasks:
-    - id: "morning_routine"
-      name: "早晨模式"
-      cron: "0 7 * * *"
-      enabled: true
-      prompt: "现在是早上7点，用户起床了，执行早晨模式"
+    # - id: "morning_routine"
+    #   name: "早晨模式"
+    #   cron: "0 7 * * *"
+    #   enabled: true
+    #   prompt: "现在是早上7点，用户起床了，执行早晨模式"
       
-    - id: "night_routine"
-      name: "夜间模式"
-      cron: "0 23 * * *"
-      enabled: true
-      prompt: "现在是晚上11点，用户准备睡觉，执行夜间模式"
+    # - id: "night_routine"
+    #   name: "夜间模式"
+    #   cron: "0 23 * * *"
+    #   enabled: true
+    #   prompt: "现在是晚上11点，用户准备睡觉，执行夜间模式"
       
-    - id: "temp_check"
-      name: "温度检查"
-      cron: "*/30 * * * *"
-      enabled: true
-      prompt: "检查当前温度，是否需要调节空调？"
+    # - id: "temp_check"
+    #   name: "温度检查"
+    #   cron: "*/30 * * * *"
+    #   enabled: true
+    #   prompt: "检查当前温度"
       
-    - id: "security_check"
-      name: "安全巡检"
-      cron: "0 */2 * * *"
-      enabled: false
-      prompt: "执行安全巡检，检查门窗和安防设备"
+    # - id: "security_check"
+    #   name: "安全巡检"
+    #   cron: "0 */2 * * *"
+    #   enabled: false
+    #   prompt: "执行安全巡检，检查门窗和安防设备"

@@ -857,9 +857,10 @@ class CoreAgent {
           }
 
           const result = await this._handleToolCall(tc.function.name, args);
-          console.log(`[CoreAgent] 工具: ${tc.function.name} → ${String(result).substring(0, 80)}`);
+          const displayResult = typeof result === 'object' ? JSON.stringify(result) : String(result);
+          console.log(`[CoreAgent] 工具: ${tc.function.name} → ${displayResult.substring(0, 80)}`);
 
-          const toolResult = { role: 'tool', tool_call_id: tc.id, content: String(result) };
+          const toolResult = { role: 'tool', tool_call_id: tc.id, content: displayResult };
           trimmedHistory.push(toolResult);
           messages.push(toolResult);
         }

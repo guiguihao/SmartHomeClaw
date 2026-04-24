@@ -8,19 +8,10 @@ plugins:
     app_secret: "${FEISHU_APP_SECRET}"
     enable_listener: true
     auto_reply: true
-    # notification_chat_id: "oc_8a046ca7cb2879b737045340f86216f4" # 在这里填入你的群 ID 或私聊 ID
+    notification_chat_id: "oc_8a046ca7cb2879b737045340f86216f4" # 确保此行不带注释且 ID 正确
 
   # MCPorter 插件 — MCP Server 客户端
   mcporter:
     enabled: true
     config_path: "./config/mcporter.json"
     timeout: 30000
-    
-  # 其他插件示例:
-  # wechat:
-  #   enabled: false
-  #   token: "${WECHAT_TOKEN}"
-  
-  # dingtalk:
-  #   enabled: false
-  #   webhook: "${DINGTALK_WEBHOOK}"

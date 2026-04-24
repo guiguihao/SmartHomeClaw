@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import path from 'path';
 import yaml from 'yaml';
 import dotenv from 'dotenv';
 import CoreAgent from './services/coreagent.js';
@@ -9,6 +10,7 @@ import MessengerBridge from './services/messenger.js';
 import SkillService from './services/skill.js';
 import FeishuService from '../plugin/feishu.js';
 import MCPorterService from '../plugin/mcporter.js';
+
 
 // 加载环境变量
 dotenv.config();
@@ -34,10 +36,10 @@ class SmartHomeAgent {
    */
   async init() {
     console.log('[Agent] Initializing SmartHomeClaw...');
-    
+
     // 1. 加载配置
     await this.loadConfig();
-    
+
     // 2. 初始化记忆服务
     this.memory = new MemoryService(this.config.memory);
     await this.memory.init();
@@ -64,7 +66,10 @@ class SmartHomeAgent {
     // 设置 Cron 任务执行回调
     this.agent.setOnCronTaskExecute(async (prompt, taskConfig) => {
       console.log(`[Agent] Cron triggered: ${taskConfig.name}`);
-      await this.thinkAndAct(prompt);
+      const res = await this.thinkAndAct(prompt);
+      console.log(`Cron triggered: ${taskConfig.name}, result: ${JSON.stringify(res)}`);
+
+
     });
 
     // 6. 初始化消息桥接器
@@ -87,7 +92,7 @@ class SmartHomeAgent {
     // 7. 初始化 MCPorter 服务
     if (this.config.plugins?.mcporter?.enabled) {
       this.mcporter = new MCPorterService(this.config.plugins.mcporter, this.agent);
-    }    
+    }
     console.log('[Agent] Initialized');
   }
 
@@ -96,16 +101,16 @@ class SmartHomeAgent {
    */
   async start() {
     console.log('[Agent] Starting SmartHomeClaw...');
-    
+
     // 1. 注册 Cron 任务
     await this.registerCronTasks();
-    
+
     // 2. 启动心跳
     this.heartbeat.start();
-    
+
     // 3. 启动调度器
     this.scheduler.startAll();
-    
+
     // 4. 启动飞书服务
     if (this.feishu) {
       await this.feishu.start();
@@ -115,7 +120,7 @@ class SmartHomeAgent {
     if (this.mcporter) {
       await this.mcporter.start();
     }
-    
+
     console.log('[Agent] SmartHomeClaw is running...');
     console.log('[Agent] Press Ctrl+C to stop');
   }
@@ -125,10 +130,10 @@ class SmartHomeAgent {
    */
   async stop() {
     console.log('[Agent] Stopping SmartHomeClaw...');
-    
+
     this.heartbeat.stop();
     this.scheduler.stopAll();
-    
+
     // 停止飞书服务
     if (this.feishu) {
       await this.feishu.stop();
@@ -138,7 +143,7 @@ class SmartHomeAgent {
     if (this.mcporter) {
       await this.mcporter.stop();
     }
-    
+
     console.log('[Agent] Stopped');
   }
 
@@ -147,24 +152,25 @@ class SmartHomeAgent {
    */
   async loadConfig() {
     try {
+      const configDir = path.join(process.cwd(), 'config');
+
+      // 并行加载所有配置文件
       const [agentConfig, heartbeatConfig, cronConfig, pluginConfig] = await Promise.all([
-        this.loadYaml('./config/agent.yaml'),
-        this.loadYaml('./config/heartbeat.yaml'),
-        this.loadYaml('./config/cron.yaml'),
-        this.loadYaml('./config/plugin.yaml'),
+        this.loadYaml(path.join(configDir, 'agent.yaml')),
+        this.loadYaml(path.join(configDir, 'heartbeat.yaml')),
+        this.loadYaml(path.join(configDir, 'cron.yaml')),
+        this.loadYaml(path.join(configDir, 'plugin.yaml')),
       ]);
 
+      // 以 agent.yaml 为基础，合并其他配置
       this.config = {
-        agent: agentConfig.agent || {},
-        mcp: agentConfig.mcp || {},
-        memory: agentConfig.memory || {},
-        models: agentConfig.models || {},
-        heartbeat: heartbeatConfig.heartbeat || {},
-        cron: cronConfig.cron || {},
-        plugins: pluginConfig.plugins || {},
+        ...(agentConfig || {}),
+        heartbeat: heartbeatConfig?.heartbeat || {},
+        cron: cronConfig?.cron || {},
+        plugins: pluginConfig?.plugins || {},
       };
 
-      console.log('[Agent] Config loaded');
+      console.log('[Agent] Config loaded (merged)');
     } catch (error) {
       console.error('[Agent] Config load error:', error.message);
       throw error;
@@ -268,7 +274,7 @@ class SmartHomeAgent {
     const apiKey = process.env[apiKeyEnv] || '';
 
     console.log(`[Agent] Using model: ${modelName} @ provider: ${matched.name}, thinking=${matchedModelConfig.thinking}, stream=${matchedModelConfig.stream}`);
-    
+
     // 获取系统提示词
     const systemPrompt = this.config.agent?.system_prompt;
 
@@ -288,10 +294,18 @@ class SmartHomeAgent {
    */
   async registerCronTasks() {
     const tasks = this.config.cron.tasks || [];
-    
+
     this.scheduler.registerTasks(tasks, async (prompt, taskConfig) => {
-      console.log(`[Agent] Cron triggered: ${taskConfig.name}`);
-      await this.thinkAndAct(prompt);
+      console.log(`[Agent] Static Cron triggered: ${taskConfig.name}`);
+      const result = await this.thinkAndAct(prompt);
+      const reply = result?.reply || result?.response;
+
+      if (reply && reply.trim()) {
+        console.log(`[Agent] Broadcasting static cron reply to Feishu (target: ${this.feishu?.notificationChatId || 'None'})`);
+        await this.messenger.broadcast(`⏰ **定时任务执行: ${taskConfig.name}**\n\n${reply}`);
+      } else {
+        console.log(`[Agent] Static Cron for ${taskConfig.name} produced no reply.`);
+      }
     });
   }
 
@@ -327,14 +341,14 @@ class SmartHomeAgent {
   async loadYaml(filePath) {
     try {
       let content = await fs.readFile(filePath, 'utf-8');
-      
+
       // 替换环境变量 ${VAR} 或 $VAR
       content = content.replace(/\$\{(\w+)\}/g, (match, key) => {
         return process.env[key] || match;
       }).replace(/\$(\w+)/g, (match, key) => {
         return process.env[key] || match;
       });
-      
+
       return yaml.parse(content) || {};
     } catch (error) {
       if (error.code === 'ENOENT') {
