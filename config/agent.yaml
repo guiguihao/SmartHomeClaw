@@ -23,13 +23,6 @@ agent:
 
     请开始你的服务。少说话，多干活。
 
-# Qwen Code 无头模式配置
-qwen:
-  output_format: "json"
-  yolo: true
-  approval_mode: "auto_edit"
-
-  
 # 记忆系统配置
 memory:
   directory: "./memory"
@@ -37,7 +30,7 @@ memory:
   habits: "HABITS.md"
   facts: "FACTS.md"
 
-# 语言模型配置 (与 Python 版一致，使用 providers 数组)
+# 语言模型配置 
 models:
   default: "nvidia/openai/gpt-oss-120b"
   providers:

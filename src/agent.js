@@ -149,7 +149,6 @@ class SmartHomeAgent {
 
       this.config = {
         agent: agentConfig.agent || {},
-        qwen: agentConfig.qwen || {},
         mcp: agentConfig.mcp || {},
         memory: agentConfig.memory || {},
         models: agentConfig.models || {},
