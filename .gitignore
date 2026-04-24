@@ -6,12 +6,7 @@ package-lock.json
 .env
 
 # Storage & Runtime
-sessions/*.json
-memory/*.md
-!memory/USER_PROFILE.md
-!memory/HABITS.md
-!memory/FACTS.md
-!memory/ENVIRONMENT.md
+sessions/*
 
 # Logs
 *.log
