@@ -238,11 +238,11 @@ function buildTextContent(text) {
  */
 function extractLocalImagePaths(text) {
   if (!text) return [];
-  
+
   const imagePaths = [];
-  
+
   console.log('[Feishu] extractLocalImagePaths called with text length:', text.length);
-  
+
   // 匹配更灵活的路径格式：
   // - 支持绝对路径 /path/...
   // - 支持相对路径 ./... 或 ../...
@@ -250,17 +250,20 @@ function extractLocalImagePaths(text) {
   // - 支持被反引号 ` 或其他符号包裹的路径
   // - 不区分大小写的文件扩展名
   const patterns = [
-    // 模式1: 反引号包裹的路径，如 `path/to/image.png`
-    /`([^`]*\.(?:png|jpg|jpeg|gif|webp|bmp))`/gi,
-    // 模式2: 绝对路径 /... 或 ~/...
-    /(?:^|\s|[:：])(\/[^\s`'"]*\.(?:png|jpg|jpeg|gif|webp|bmp))(?:$|\s|[,，.。！!?？])/gi,
-    /(?:^|\s|[:：])(~\/[^\s`'"]*\.(?:png|jpg|jpeg|gif|webp|bmp))(?:$|\s|[,，.。！!?？])/gi,
+    // 模式1: 反引号包裹的路径，支持空格，如 `/path with spaces/image.png`
+    /`([^`\n\r]+\.(?:png|jpg|jpeg|gif|webp|bmp))`/gi,
+
+    // 模式2: 绝对路径 /... 或 ~/... (优化边界处理)
+    /(?:^|\s|[:：])(\/(?:[^\s`'"]|\\ )+\.(?:png|jpg|jpeg|gif|webp|bmp))(?=$|\s|[,，.。！!?？])/gi,
+    /(?:^|\s|[:：])(~\/(?:[^\s`'"]|\\ )+\.(?:png|jpg|jpeg|gif|webp|bmp))(?=$|\s|[,，.。！!?？])/gi,
+
     // 模式3: 相对路径 ./... 或 ../...
-    /(?:^|\s|[:：])(\.\.?\/[^\s`'"]*\.(?:png|jpg|jpeg|gif|webp|bmp))(?:$|\s|[,，.。！!?？])/gi,
-    // 模式4: 简单路径（不带前缀但看起来像路径）
-    /(?:^|\s|[:：])([^\s`'"]*[\/\\][^\s`'"]*\.(?:png|jpg|jpeg|gif|webp|bmp))(?:$|\s|[,，.。！!?？])/gi,
+    /(?:^|\s|[:：])(\.\.?\/(?:[^\s`'"]|\\ )+\.(?:png|jpg|jpeg|gif|webp|bmp))(?=$|\s|[,，.。！!?？])/gi,
+
+    // 模式4: 简单路径（包含路径分隔符且有扩展名）
+    /(?:^|\s|[:：])([^\s`'"]+[\/\\][^\s`'"]+\.(?:png|jpg|jpeg|gif|webp|bmp))(?=$|\s|[,，.。！!?？])/gi,
   ];
-  
+
   for (const pattern of patterns) {
     let match;
     // 重置正则表达式的 lastIndex
@@ -274,8 +277,15 @@ function extractLocalImagePaths(text) {
           imagePath = path.join(homeDir, imagePath.slice(2));
         }
       }
+
+      // 归一化路径：转换为绝对路径，解决 ./abc.png 和 abc.png 的重复问题
+      try {
+        imagePath = path.resolve(imagePath);
+      } catch (e) {
+        console.warn('[Feishu] Path resolve failed:', imagePath);
+      }
+
       // 验证路径是否存在
-      console.log('[Feishu] Checking path:', imagePath, 'exists:', fs.existsSync(imagePath));
       if (fs.existsSync(imagePath)) {
         // 去重
         if (!imagePaths.includes(imagePath)) {
@@ -285,7 +295,7 @@ function extractLocalImagePaths(text) {
       }
     }
   }
-  
+
   console.log('[Feishu] Extracted image paths:', imagePaths);
   return imagePaths;
 }
@@ -317,12 +327,17 @@ class FeishuService {
     // 消息去重：避免飞书重复投递相同消息（飞书保证 at-least-once 投递，可能重复）
     // 使用 Map(key → timestamp) 而非 Set，支持按时间过期
     this._processedMessageMap = new Map(); // key: `${chatId}_${messageId}` → 处理时间戳
-    this._dedupTTL = 10 * 60 * 1000; // 去重窗口：10分钟（覆盖飞书最长重试间隔）
+    this._dedupTTL = 10 * 60 * 1000; // 去重窗口：10分钟
+    this._maxDedupSize = 2000;       // 最大缓存条数（防止内存溢出）
     this._dedupCleanInterval = null;
 
     this.client = null;      // HTTP API 客户端
     this.wsClient = null;    // WebSocket 长连接客户端
     this.eventDispatcher = null;
+
+    // 图片上传缓存：path -> { imageKey, timestamp }
+    this._imageKeyCache = new Map();
+    this._imageCacheTTL = 30 * 60 * 1000; // 缓存 30 分钟
   }
 
   async start() {
@@ -402,28 +417,33 @@ class FeishuService {
    */
   _startDedupCleaner() {
     if (this._dedupCleanInterval) clearInterval(this._dedupCleanInterval);
-    // 每 2 分钟清理过期记录（超过 TTL 的）
+    // 每 2 分钟清理过期记录
     this._dedupCleanInterval = setInterval(() => {
-      const now = Date.now();
-      const expiredKeys = [];
-      for (const [key, ts] of this._processedMessageMap) {
-        if (now - ts > this._dedupTTL) {
-          expiredKeys.push(key);
-        }
-      }
-      if (expiredKeys.length > 0) {
-        for (const key of expiredKeys) {
-          this._processedMessageMap.delete(key);
-        }
-        console.log('[Feishu] Dedup: cleaned ' + expiredKeys.length + ' expired entries, ' + this._processedMessageMap.size + ' remaining');
-      }
+      this._cleanExpiredDedupEntries();
     }, 2 * 60 * 1000);
+  }
+
+  /**
+   * 清理过期的去重记录
+   */
+  _cleanExpiredDedupEntries() {
+    const now = Date.now();
+    let expiredCount = 0;
+    for (const [key, ts] of this._processedMessageMap) {
+      if (now - ts > this._dedupTTL) {
+        this._processedMessageMap.delete(key);
+        expiredCount++;
+      }
+    }
+    if (expiredCount > 0) {
+      console.log(`[Feishu] Dedup: cleaned ${expiredCount} expired entries, ${this._processedMessageMap.size} remaining`);
+    }
   }
 
   /**
    * 检查消息是否已处理过
    * @param {string} chatId - 聊天 ID
-   * @param {object} msgData - 消息数据 (包含 message_id, create_time 等)
+   * @param {object} msgData - 消息数据
    * @param {string} content - 消息内容
    * @returns {boolean} true 表示已处理过，应该跳过
    */
@@ -431,20 +451,32 @@ class FeishuService {
     const messageId = msgData.message_id || msgData.msg_id;
     let key = chatId + '_' + messageId;
 
-    // 如果无 message_id，使用 chatId+内容哈希
     if (!messageId) {
       const hash = this._simpleHash(content);
       key = chatId + '_' + hash;
     }
 
-    // 检查是否已处理且未过期
     const lastProcessed = this._processedMessageMap.get(key);
     if (lastProcessed && (Date.now() - lastProcessed < this._dedupTTL)) {
-      console.log('[Feishu] Duplicate message detected (key=' + key + ', age=' + Math.round((Date.now() - lastProcessed) / 1000) + 's), skipping...');
+      console.log('[Feishu] Duplicate message detected: ' + key);
       return true;
     }
 
-    // 标记为已处理（记录时间戳而非简单标记）
+    // 容量控制：如果超过最大限制，先清理过期记录
+    if (this._processedMessageMap.size >= this._maxDedupSize) {
+      this._cleanExpiredDedupEntries();
+
+      // 如果清理后仍然过大，强制删除最旧的 20%
+      if (this._processedMessageMap.size >= this._maxDedupSize * 0.9) {
+        const toDelete = Math.floor(this._maxDedupSize * 0.2);
+        const keys = Array.from(this._processedMessageMap.keys());
+        for (let i = 0; i < toDelete; i++) {
+          this._processedMessageMap.delete(keys[i]);
+        }
+        console.log(`[Feishu] Dedup: cache full, force removed ${toDelete} oldest entries`);
+      }
+    }
+
     this._processedMessageMap.set(key, Date.now());
     return false;
   }
@@ -483,9 +515,9 @@ class FeishuService {
 
       const sender = msgData.sender || {};
       const senderId = sender.sender_id?.open_id ||
-                       sender.open_id ||
-                       sender.user_id ||
-                       'unknown';
+        sender.open_id ||
+        sender.user_id ||
+        'unknown';
 
       const content = this.parseMessageContent(msgData);
 
@@ -648,7 +680,7 @@ class FeishuService {
       clearInterval(patchTimer);
       try {
         await this.patchCardMessage(messageId, buffer || '抱歉，处理过程中遇到了问题。');
-      } catch {}
+      } catch { }
       throw error;
     }
   }
@@ -733,15 +765,21 @@ class FeishuService {
    * @returns {Promise<string>} 飞书 image_key
    */
   async uploadImage(imagePath) {
+    // 1. 检查缓存
+    const cached = this._imageKeyCache.get(imagePath);
+    if (cached && (Date.now() - cached.timestamp < this._imageCacheTTL)) {
+      console.log('[Feishu] Using cached imageKey for:', imagePath);
+      return cached.imageKey;
+    }
+
     try {
       console.log('[Feishu] Uploading image:', imagePath);
-      
       const imageFile = fs.readFileSync(imagePath);
       console.log('[Feishu] Image file read, size:', imageFile.length, 'bytes');
-      
+
       // 尝试不同的 API 调用方式
       let res;
-      
+
       // 方式1: 尝试 im.v1.image.create
       try {
         console.log('[Feishu] Trying upload method 1: im.v1.image.create');
@@ -754,7 +792,7 @@ class FeishuService {
         console.log('[Feishu] Method 1 success');
       } catch (e1) {
         console.log('[Feishu] Method 1 failed:', e1.message);
-        
+
         // 方式2: 尝试 im.image.create (不带 v1)
         try {
           console.log('[Feishu] Trying upload method 2: im.image.create');
@@ -788,12 +826,19 @@ class FeishuService {
         // 其他格式，尝试提取
         imageKey = res.data?.image_key || res.data?.image?.image_key || res.image_key;
       }
-      
+
       if (!imageKey) {
         throw new Error('No image_key found in response: ' + JSON.stringify(res));
       }
-      
+
       console.log('[Feishu] Image uploaded, image_key:', imageKey);
+
+      // 存入缓存
+      this._imageKeyCache.set(imagePath, {
+        imageKey,
+        timestamp: Date.now()
+      });
+
       return imageKey;
     } catch (error) {
       console.error('[Feishu] Upload image error:', error.message);
@@ -842,9 +887,9 @@ class FeishuService {
     try {
       console.log('[Feishu] sendLocalImagesFromContent called, chatId:', chatId);
       console.log('[Feishu] Content to check for images:', text);
-      
+
       const imagePaths = extractLocalImagePaths(text);
-      
+
       if (imagePaths.length === 0) {
         console.log('[Feishu] No local images found in content');
         return;
