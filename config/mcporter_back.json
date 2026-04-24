@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "smarthome": {
+      "command": "python3",
+      "args": ["/home/admin/ueralagent_new/mcp/ureal-mcp/server.py"]
+    },
+    "miot": {
+      "command": "python3",
+      "args": ["/home/admin/ueralagent_new/mcp/miot-mcp/mcp_server/mcp_server.py"],
+      "env": {
+        "MIJIA_LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}

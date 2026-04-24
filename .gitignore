@@ -1,35 +1,22 @@
 # Dependencies
 node_modules/
-
-# Build output
-dist/
-
-# Config files with secrets
-config/gateways.json
+package-lock.json
 
 # Environment
 .env
-.env.local
-.env.*.local
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-.qwen
-# OS
-.DS_Store
-Thumbs.db
-
-*_back*
+# Storage & Runtime
+sessions/*.json
+memory/*.md
+!memory/USER_PROFILE.md
+!memory/HABITS.md
+!memory/FACTS.md
+!memory/ENVIRONMENT.md
 
 # Logs
 *.log
 npm-debug.log*
 
-# Test coverage
-coverage/
-sessions/*
-tests/
-
+# OS
+.DS_Store
+Thumbs.db
