@@ -262,14 +262,18 @@ class SmartHomeAgent {
     const apiKey = process.env[apiKeyEnv] || '';
 
     console.log(`[Agent] Using model: ${modelName} @ provider: ${matched.name}, thinking=${matchedModelConfig.thinking}, stream=${matchedModelConfig.stream}`);
+    
+    // 获取系统提示词
+    const systemPrompt = this.config.agent?.system_prompt;
 
     return {
-      name: 'SmartHomeClaw',
+      name: this.config.agent?.name || 'SmartHomeClaw',
       model: modelName,
       baseUrl: matched.base_url,
       apiKey: apiKey,
       thinking: matchedModelConfig.thinking || false,
       stream: matchedModelConfig.stream || false,
+      systemPrompt: systemPrompt
     };
   }
 

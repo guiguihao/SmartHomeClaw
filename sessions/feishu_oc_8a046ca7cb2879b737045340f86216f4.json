@@ -7,5 +7,14 @@
     "role": "assistant",
     "content": "**你好！** 有什么可以帮您管理或控制的智能家居需求吗？",
     "reasoning_content": "User says \"nihao a\". Possibly greeting? They might expect a response. According to guidelines, we should respond minimally, using lark_md formatting. No need to call tools. Just reply greeting."
+  },
+  {
+    "role": "user",
+    "content": "hi 正常吗"
+  },
+  {
+    "role": "assistant",
+    "content": "**你好！** 我在这里随时为您的智能家居提供帮助。有什么需要我协助的？",
+    "reasoning_content": "User just says hi. According to guidelines, we should respond minimally, maybe greet. No tool needed. Use lark_md."
   }
 ]

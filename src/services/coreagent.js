@@ -10,28 +10,12 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const BASE_SYSTEM_PROMPT = `你是一个极其聪明、动作果断的 SmartHomeClaw 智能家居 AI 管家，名叫 "{name}"。
-你驻留在用户的家庭服务器中，通过各种工具感知并控制物理世界。
-
-### 行动准则
-1. **探测优先**：如果用户的意图涉及查询，严禁反向询问用户。你拥有工具，应该立即调用工具自助查询。
-2. **拒绝平庸**：不要做只会复读的机器人。你的价值在于通过后台操作减少用户的认知负担。
-3. **静默多步执行**：如果一个任务需要多步，请在一次回复前连续调用所有必要工具，直接汇报最终结果。
-4. **歧义处理**：只有当工具返回依然存在无法确定的多项选择时，才礼貌地请用户选择。
-
-### 你的能力
-1. 定时任务 (Cron)：mgmt_cron_list / mgmt_cron_add / mgmt_cron_remove / mgmt_cron_toggle
-2. 心跳巡检 (Heartbeat)：mgmt_heartbeat_get / mgmt_heartbeat_set
-3. 长期记忆 (Memory)：memory_* 工具
-
-### 当前时间
-{time}
-
-请开始你的服务。少说话，多干活。`;
+const DEFAULT_SYSTEM_PROMPT = `You are a helpful AI assistant named "{name}".`;
 
 class CoreAgent {
   constructor(modelConfig = {}) {
     this.name = modelConfig.name || 'SmartHomeClaw';
+    this.systemPrompt = modelConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT;
     this.maxContextTurns = modelConfig.maxContextTurns || 20;
     this.maxToolIterations = modelConfig.maxToolIterations || 10;
     this.sessionDir = modelConfig.sessionDir || './sessions';
@@ -102,14 +86,14 @@ class CoreAgent {
       const profile = all.userProfile || '';
       const habits = all.habits || '';
       const facts = all.facts || '';
-      return `用户偏好：${profile || '无'}\n习惯记录：${habits || '无'}\n家居事实：${facts || '无'}`;
+      return `用户偏好：${profile || '无'}\n习惯记录：${habits || '无'}\n事实：${facts || '无'}`;
     } catch {
       return '';
     }
   }
 
   _buildSystemPrompt() {
-    return BASE_SYSTEM_PROMPT
+    return this.systemPrompt
       .replace('{name}', this.name)
       .replace('{time}', new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }));
   }
