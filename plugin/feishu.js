@@ -318,6 +318,9 @@ class FeishuService {
     this.streamReply = config.stream_reply !== false;
     this.agent = agent;
 
+    // 通知渠道
+    this.notificationChatId = config.notification_chat_id || process.env.FEISHU_NOTIFICATION_CHAT_ID;
+
     // 流式回复参数
     this.streamPatchInterval = config.stream_patch_interval || 500; // patch 间隔(ms)
 
@@ -926,6 +929,25 @@ class FeishuService {
     // 发送文本后，检测并发送本地图片
     await this.sendLocalImagesFromContent(chatId, text);
     return res;
+  }
+
+  /**
+   * 广播消息到通知渠道
+   */
+  async broadcast(text) {
+    if (this.notificationChatId) {
+      return this.send(this.notificationChatId, text);
+    }
+    
+    // 如果没有配置通知群，则发送给所有活跃会话
+    const chatIds = Object.keys(this._chatSessionMap);
+    if (chatIds.length === 0) {
+      console.warn('[Feishu] No active chats or notification_chat_id configured for broadcast');
+      return;
+    }
+    
+    console.log(`[Feishu] Broadcasting to ${chatIds.length} active chats`);
+    return Promise.all(chatIds.map(id => this.send(id, text)));
   }
 }
 

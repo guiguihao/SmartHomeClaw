@@ -5,6 +5,7 @@ import CoreAgent from './services/coreagent.js';
 import Scheduler from './services/scheduler.js';
 import Heartbeat from './services/heartbeat.js';
 import MemoryService from './services/memory.js';
+import MessengerBridge from './services/messenger.js';
 import FeishuService from '../plugin/feishu.js';
 import MCPorterService from '../plugin/mcporter.js';
 
@@ -22,6 +23,7 @@ class SmartHomeAgent {
     this.scheduler = null;
     this.heartbeat = null;
     this.memory = null;
+    this.messenger = null; // 消息桥接器
     this.feishu = null;
   }
 
@@ -58,9 +60,21 @@ class SmartHomeAgent {
       await this.thinkAndAct(prompt);
     });
 
-    // 6. 初始化飞书服务
+    // 6. 初始化消息桥接器
+    this.messenger = new MessengerBridge();
+
+    // 7. 初始化飞书服务
     if (this.config.plugins?.feishu?.enabled) {
       this.feishu = new FeishuService(this.config.plugins.feishu, this.agent);
+      this.messenger.register('feishu', this.feishu);
+    }
+
+    // 关联心跳警报到消息广播
+    if (this.heartbeat) {
+      this.heartbeat.setOnWarning(async (message, result) => {
+        console.log(`[Agent] Heartbeat warning: ${message}`);
+        await this.messenger.broadcast(`⚠️ **系统巡检告警**\n\n${message}`);
+      });
     }
 
     // 7. 初始化 MCPorter 服务

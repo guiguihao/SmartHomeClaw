@@ -36,7 +36,7 @@ class CoreAgent {
     this.maxToolIterations = modelConfig.maxToolIterations || 10;
     this.sessionDir = modelConfig.sessionDir || './sessions';
     console.log(`[CoreAgent] model=${modelConfig.model}, baseUrl=${modelConfig.baseUrl}`);
-    
+
     this.client = new OpenAI({
       baseURL: modelConfig.baseUrl,
       apiKey: modelConfig.apiKey,
@@ -396,9 +396,9 @@ class CoreAgent {
       } catch (e) {
         if (e.code !== 'ENOENT') throw e; // 文件不存在则创建空内容
       }
-      
+
       const lines = content.split('\n');
-      
+
       // 1. 行号操作 (insert_line/replace_line/delete_line)
       if (args.insert_line !== undefined) {
         const lineNum = parseInt(args.insert_line);
@@ -407,7 +407,7 @@ class CoreAgent {
         }
         lines.splice(lineNum, 0, args.content || '');
       }
-      
+
       if (args.replace_line !== undefined) {
         const lineNum = parseInt(args.replace_line);
         if (lineNum < 0 || lineNum >= lines.length) {
@@ -415,7 +415,7 @@ class CoreAgent {
         }
         lines[lineNum] = args.content || '';
       }
-      
+
       if (args.delete_line !== undefined) {
         const lineNum = parseInt(args.delete_line);
         if (lineNum < 0 || lineNum >= lines.length) {
@@ -423,13 +423,13 @@ class CoreAgent {
         }
         lines.splice(lineNum, 1);
       }
-      
+
       // 2. 查找替换操作 (find/replace/all)
       if (args.find) {
         const findStr = args.find;
         const replaceStr = args.replace || '';
         const findAll = args.all === true;
-        
+
         let replaced = false;
         if (args.regex) {
           // 正则表达式查找替换
@@ -455,17 +455,17 @@ class CoreAgent {
             }
           }
         }
-        
+
         if (!replaced) {
           return `❌ 未找到匹配内容: "${findStr}"`;
         }
       }
-      
+
       // 写入文件
       const newContent = lines.join('\n');
       await fs.writeFile(filePath, newContent, 'utf8');
       return `✅ 已编辑文件: ${filePath}`;
-      
+
     } catch (e) {
       return `❌ 编辑文件失败: ${e.message}`;
     }
@@ -483,7 +483,7 @@ class CoreAgent {
     try {
       switch (toolName) {
         case 'cmd_exec':
-          const { stdout, stderr } = await execAsync(args.command, { 
+          const { stdout, stderr } = await execAsync(args.command, {
             cwd: args.cwd || process.cwd(),
             timeout: args.timeout || 30000,
             maxBuffer: 1024 * 1024 // 1MB
@@ -677,7 +677,7 @@ class CoreAgent {
 
     // ── 指令拦截 ──
     const trimmed = prompt.trim();
-    if (trimmed === '/new' || trimmed === '/new会话') {
+    if (trimmed === '/new' || trimmed === '/新会话') {
       const result = await this.newSession(sessionId);
       return { ...result, command: 'new' };
     }
@@ -711,12 +711,12 @@ class CoreAgent {
     }
 
     const messages = [{ role: 'system', content: systemPrompt }];
-    
+
     // 打印会话上下文日志
     console.log(`\n[CoreAgent] === Session Context [${sessionId}] ===`);
     console.log(`[CoreAgent] System Prompt: ${systemPrompt.substring(0, 200)}...`);
     console.log(`[CoreAgent] History Length: ${trimmedHistory.length} messages`);
-    
+
     messages.push(...this._normalizeMessages(trimmedHistory));
 
     const tools = this._getAllTools();
@@ -918,7 +918,7 @@ class CoreAgent {
       this._sessions[sessionId] = [];
     }
     const sessionPath = path.join(this.sessionDir, `${sessionId}.json`);
-    await fs.unlink(sessionPath).catch(() => {});
+    await fs.unlink(sessionPath).catch(() => { });
   }
 
   /**
@@ -934,11 +934,11 @@ class CoreAgent {
     const history = this._sessions[sessionId];
 
     if (history && history.length > 0) {
-      const timestamp = new Date().toLocaleString('zh-CN', { 
+      const timestamp = new Date().toLocaleString('zh-CN', {
         timeZone: 'Asia/Shanghai',
-        hour12: false 
+        hour12: false
       }).replace(/[\/ :]/g, '-');
-      
+
       const backupPath = path.join(this.sessionDir, `${sessionId}_backup_${timestamp}.json`);
       try {
         await fs.writeFile(backupPath, JSON.stringify(history, null, 2), 'utf-8');
@@ -978,9 +978,9 @@ class CoreAgent {
     const historyText = history
       .map(msg => {
         const roleLabel = msg.role === 'user' ? '用户' :
-                          msg.role === 'assistant' ? 'AI' :
-                          msg.role === 'tool' ? '工具结果' :
-                          msg.role === 'system' ? '系统' : msg.role;
+          msg.role === 'assistant' ? 'AI' :
+            msg.role === 'tool' ? '工具结果' :
+              msg.role === 'system' ? '系统' : msg.role;
         let text = `[${roleLabel}]: ${msg.content || ''}`;
         if (msg.tool_calls) {
           text += ` (调用了工具: ${msg.tool_calls.map(tc => tc.function?.name).join(', ')})`;
@@ -1032,10 +1032,10 @@ class CoreAgent {
       this._sessions[sessionId] = await this._loadSession(sessionId);
     }
     const history = this._sessions[sessionId];
-    
+
     const systemPrompt = this._buildSystemPrompt();
     const memoryCtx = await this._loadMemoryContext();
-    
+
     let fullSystem = systemPrompt;
     if (options.appendSystemPrompt) {
       fullSystem += `\n\n## 插件上下文\n${options.appendSystemPrompt}`;
@@ -1044,8 +1044,8 @@ class CoreAgent {
       fullSystem += `\n\n## 记忆上下文\n${memoryCtx}`;
     }
 
-    const historySummary = history.length > 0 
-      ? history.map((msg, i) => `${i+1}. [${msg.role}]: ${msg.content ? msg.content.substring(0, 50) + (msg.content.length > 50 ? '...' : '') : '(工具调用)'}`).join('\n')
+    const historySummary = history.length > 0
+      ? history.map((msg, i) => `${i + 1}. [${msg.role}]: ${msg.content ? msg.content.substring(0, 50) + (msg.content.length > 50 ? '...' : '') : '(工具调用)'}`).join('\n')
       : '无历史记录';
 
     const response = `🔍 **会话上下文 [${sessionId}]**\n\n` +
