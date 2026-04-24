@@ -312,6 +312,20 @@ class CoreAgent {
             },
           },
         },
+        {
+          type: 'function',
+          function: {
+            name: 'cmd_exec',
+            description: '在服务器上执行终端命令（如运行 Python 脚本）',
+            parameters: {
+              type: 'object',
+              properties: {
+                command: { type: 'string', description: '要执行的完整命令字符串' },
+              },
+              required: ['command'],
+            },
+          },
+        },
       );
     }
 
