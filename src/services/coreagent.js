@@ -104,7 +104,7 @@ class CoreAgent {
       .replace('{time}', new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }));
   }
 
-  _getAllTools() {
+  async _getAllTools() {
     const tools = [];
 
     if (this._memoryService) {
@@ -288,6 +288,7 @@ class CoreAgent {
 
     // 技能工具
     if (this._skillService) {
+      // 1. 保留基础技能管理工具
       tools.push(
         {
           type: 'function',
@@ -325,8 +326,34 @@ class CoreAgent {
               required: ['command'],
             },
           },
-        },
+        }
       );
+
+      // 2. 动态映射具体技能为顶级工具
+      try {
+        const skillList = await this._skillService.list();
+        for (const skill of skillList) {
+          // 避免与内置工具冲突
+          if (['skill_list', 'skill_run', 'cmd_exec'].includes(skill.name)) continue;
+          
+          tools.push({
+            type: 'function',
+            function: {
+              name: skill.name.replace(/-/g, '_'), // 统一使用下划线
+              description: `[Skill] ${skill.description || skill.name}`,
+              parameters: {
+                type: 'object',
+                properties: {
+                  query: { type: 'string', description: '搜索或执行所需的参数' },
+                },
+                additionalProperties: true, // 允许传递更多参数
+              },
+            },
+          });
+        }
+      } catch (e) {
+        console.error(`[CoreAgent] 获取技能列表失败: ${e.message}`);
+      }
     }
 
     // MCP 工具
@@ -354,6 +381,23 @@ class CoreAgent {
     } else if (toolName.startsWith('skill_')) {
       return await this._handleSkillTool(toolName, args);
     }
+
+    // 兜底：尝试作为动态映射的技能处理
+    if (this._skillService) {
+      const skills = await this._skillService.list();
+      const targetSkill = skills.find(s => s.name.replace(/-/g, '_') === toolName);
+      if (targetSkill) {
+        console.log(`[CoreAgent] 动态路由技能工具: ${toolName} -> ${targetSkill.name}`);
+        const result = await this._skillService.run(targetSkill.name, args, this);
+        
+        // 自动脱壳：如果返回的是 {response: '...'} 或 {reply: '...'}，只取内容
+        if (result && typeof result === 'object') {
+          return result.response || result.reply || JSON.stringify(result);
+        }
+        return String(result);
+      }
+    }
+
     return `未知工具: ${toolName}`;
   }
 
@@ -404,7 +448,11 @@ class CoreAgent {
         case 'skill_list':
           return await this._skillService.list();
         case 'skill_run':
-          return await this._skillService.run(args.name, args.params || {}, this);
+          const result = await this._skillService.run(args.name, args.params || {}, this);
+          if (result && typeof result === 'object') {
+            return result.response || result.reply || JSON.stringify(result);
+          }
+          return String(result);
         default:
           return `未知技能工具: ${toolName}`;
       }
@@ -801,7 +849,7 @@ class CoreAgent {
 
     messages.push(...this._normalizeMessages(trimmedHistory));
 
-    const tools = this._getAllTools();
+    const tools = await this._getAllTools();
     let finalResponse = '';
 
     for (let i = 0; i < this.maxToolIterations; i++) {

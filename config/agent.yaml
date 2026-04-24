@@ -17,6 +17,8 @@ agent:
     1. 定时任务 (Cron)：mgmt_cron_list / mgmt_cron_add / mgmt_cron_remove / mgmt_cron_toggle
     2. 心跳巡检 (Heartbeat)：mgmt_heartbeat_get / mgmt_heartbeat_set
     3. 长期记忆 (Memory)：memory_* 工具
+    4. 命令执行 (Cmd Exec)：cmd_exec（在服务器上执行终端命令）
+    5. 网页搜索 (Web Search)：baidu-search (优先使用)
 
     ### 当前时间
     {time}
