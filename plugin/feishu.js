@@ -327,12 +327,13 @@ class FeishuService {
     // chatId → sessionId 映射（支持 /new 切换新会话）
     this._chatSessionMap = {};
 
-    // 消息去重：避免飞书重复投递相同消息（飞书保证 at-least-once 投递，可能重复）
-    // 使用 Map(key → timestamp) 而非 Set，支持按时间过期
+    // 消息去重：避免飞书重复投递相同消息
     this._processedMessageMap = new Map(); // key: `${chatId}_${messageId}` → 处理时间戳
     this._dedupTTL = 10 * 60 * 1000; // 去重窗口：10分钟
-    this._maxDedupSize = 2000;       // 最大缓存条数（防止内存溢出）
+    this._maxDedupSize = 2000;       // 最大缓存条数
+    this.dedupFilePath = path.join(process.cwd(), 'sessions', 'feishu_dedup.json');
     this._dedupCleanInterval = null;
+    this._saveTimer = null;
 
     this.client = null;      // HTTP API 客户端
     this.wsClient = null;    // WebSocket 长连接客户端
@@ -357,6 +358,9 @@ class FeishuService {
     console.log('[Feishu] Starting...');
 
     try {
+      // 0. 加载本地去重缓存
+      await this._loadDedupCache();
+
       // 确保之前没有启动
       if (this.client || this.wsClient) {
         console.warn('[Feishu] Already initialized, stopping first...');
@@ -440,7 +444,50 @@ class FeishuService {
     }
     if (expiredCount > 0) {
       console.log(`[Feishu] Dedup: cleaned ${expiredCount} expired entries, ${this._processedMessageMap.size} remaining`);
+      this._saveDedupCache();
     }
+  }
+
+  /**
+   * 从本地加载去重缓存
+   */
+  async _loadDedupCache() {
+    try {
+      if (fs.existsSync(this.dedupFilePath)) {
+        const data = fs.readFileSync(this.dedupFilePath, 'utf8');
+        const obj = JSON.parse(data);
+        const now = Date.now();
+        let loadedCount = 0;
+        
+        for (const [key, ts] of Object.entries(obj)) {
+          // 只加载未过期的记录
+          if (now - ts < this._dedupTTL) {
+            this._processedMessageMap.set(key, ts);
+            loadedCount++;
+          }
+        }
+        console.log(`[Feishu] Dedup: loaded ${loadedCount} entries from local cache`);
+      }
+    } catch (error) {
+      console.warn('[Feishu] Dedup: failed to load cache:', error.message);
+    }
+  }
+
+  /**
+   * 保存去重缓存到本地 (防抖处理)
+   */
+  _saveDedupCache() {
+    if (this._saveTimer) clearTimeout(this._saveTimer);
+    
+    this._saveTimer = setTimeout(() => {
+      try {
+        const obj = Object.fromEntries(this._processedMessageMap);
+        fs.writeFileSync(this.dedupFilePath, JSON.stringify(obj, null, 2), 'utf8');
+        this._saveTimer = null;
+      } catch (error) {
+        console.warn('[Feishu] Dedup: failed to save cache:', error.message);
+      }
+    }, 2000); // 2秒防抖
   }
 
   /**
@@ -481,6 +528,7 @@ class FeishuService {
     }
 
     this._processedMessageMap.set(key, Date.now());
+    this._saveDedupCache();
     return false;
   }
 

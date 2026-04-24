@@ -1,20 +1,11 @@
 [
   {
     "role": "user",
-    "content": "hi"
+    "content": "nihao a"
   },
   {
     "role": "assistant",
-    "content": "**SmartHomeClaw** 已上线，随时为您服务 😊",
-    "reasoning_content": "The user says \"hi\". According to guidelines: respond with maybe greeting, but brief. No need to call tools. Should output minimal Lark MD."
-  },
-  {
-    "role": "user",
-    "content": "hi"
-  },
-  {
-    "role": "assistant",
-    "content": "**SmartHomeClaw** 已就绪，等待您的指令 🚀",
-    "reasoning_content": "The user just says \"hi\". No specific request. According to guidelines, we should respond briefly, maybe greeting. But also guidelines: minimal talk, but we can respond with a friendly greeting. Use lark_md. Probably just a short greeting."
+    "content": "**你好！** 有什么可以帮您管理或控制的智能家居需求吗？",
+    "reasoning_content": "User says \"nihao a\". Possibly greeting? They might expect a response. According to guidelines, we should respond minimally, using lark_md formatting. No need to call tools. Just reply greeting."
   }
 ]
