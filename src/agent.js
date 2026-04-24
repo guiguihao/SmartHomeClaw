@@ -6,6 +6,7 @@ import Scheduler from './services/scheduler.js';
 import Heartbeat from './services/heartbeat.js';
 import MemoryService from './services/memory.js';
 import MessengerBridge from './services/messenger.js';
+import SkillService from './services/skill.js';
 import FeishuService from '../plugin/feishu.js';
 import MCPorterService from '../plugin/mcporter.js';
 
@@ -24,6 +25,7 @@ class SmartHomeAgent {
     this.heartbeat = null;
     this.memory = null;
     this.messenger = null; // 消息桥接器
+    this.skill = null;     // 技能服务
     this.feishu = null;
   }
 
@@ -40,11 +42,16 @@ class SmartHomeAgent {
     this.memory = new MemoryService(this.config.memory);
     await this.memory.init();
 
-    // 3. 初始化 CoreAgent - 使用配置中的模型
+    // 3. 初始化 CoreAgent
     const modelConfig = this._buildModelConfig();
     this.agent = new CoreAgent(modelConfig);
     this.agent.setMemory(this.memory);
     await this.agent.init();
+
+    // 4. 初始化技能服务
+    this.skill = new SkillService(this.config.agent?.skills);
+    await this.skill.init();
+    this.agent.setSkill(this.skill);
 
     // 4. 初始化调度器
     this.scheduler = new Scheduler();

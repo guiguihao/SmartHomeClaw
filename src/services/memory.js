@@ -11,6 +11,7 @@ class MemoryService {
     this.userProfileFile = config.userProfile || 'USER_PROFILE.md';
     this.habitsFile = config.habits || 'HABITS.md';
     this.factsFile = config.facts || 'FACTS.md';
+    this.environmentFile = config.environment || 'ENVIRONMENT.md';
   }
 
   /**
@@ -21,13 +22,17 @@ class MemoryService {
       await fs.mkdir(this.directory, { recursive: true });
       
       // 确保文件存在
-      const files = [this.userProfileFile, this.habitsFile, this.factsFile];
+      const files = [this.userProfileFile, this.habitsFile, this.factsFile, this.environmentFile];
       for (const file of files) {
         const filePath = path.join(this.directory, file);
         try {
           await fs.access(filePath);
         } catch {
-          await fs.writeFile(filePath, `# ${file.replace('.md', '')}\n\n`);
+          if (file === this.environmentFile) {
+            await fs.writeFile(filePath, `# 环境状态 (最近更新: ${new Date().toLocaleString()})\n\n## 传感器上报\n- 暂无数据\n\n## 户外天气\n- 暂无数据\n\n## 未来七天预报\n- 暂无数据\n`);
+          } else {
+            await fs.writeFile(filePath, `# ${file.replace('.md', '')}\n\n`);
+          }
         }
       }
       
@@ -87,6 +92,20 @@ class MemoryService {
   }
 
   /**
+   * 读取环境信息
+   */
+  async loadEnvironment() {
+    return this.readFile(this.environmentFile);
+  }
+
+  /**
+   * 更新环境信息
+   */
+  async updateEnvironment(content) {
+    return this.writeFile(this.environmentFile, content);
+  }
+
+  /**
    * 读取文件
    * @param {string} filename - 文件名
    * @returns {string} 文件内容
@@ -129,6 +148,7 @@ class MemoryService {
       userProfile: await this.loadUserProfile(),
       habits: await this.loadHabits(),
       facts: await this.loadFacts(),
+      environment: await this.loadEnvironment(),
     };
   }
 }

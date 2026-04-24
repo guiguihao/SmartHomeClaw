@@ -182,28 +182,30 @@ function parseMarkdownToCardElements(text) {
  * @returns {string} 清理后的文本
  */
 function cleanLarkMd(text) {
-  // 先临时保存 <font> 标签，避免被误删
+  if (!text) return '';
+
+  // 1. 临时保存 <font> 标签，避免被后续规则破坏
   const fontTags = [];
   const textWithPlaceholders = text.replace(/<font[^>]*>.*?<\/font>/gi, (match) => {
     fontTags.push(match);
-    return '__FONT_' + (fontTags.length - 1) + '__';
+    return `@@FONT_${fontTags.length - 1}@@`; // 使用更独特的占位符
   });
 
+  // 2. 清理不支持的语法
   const cleaned = textWithPlaceholders
-    // 移除标题符号（# 开头的行 → 去掉 #，保留文本）
-    .replace(/^#{1,6}\\s+/gm, '')
+    // 移除标题符号（# 开头的行 -> 直接显示文本）
+    .replace(/^#{1,6}\s+/gm, '')
     // 移除引用符号
-    .replace(/^>\\s+/gm, '')
-    // 移除分割线（---、***、___ 独占一行）
-    .replace(/^[-*_]{3,}\\s*$/gm, '')
-    // 移除代码块包裹（\`\`\`行本身），保留内容
-    .replace(/^\\\`\\\`\\\`[\\s\\S]*?\\\`\\\`\\\`$/gm, (match) => {
-      const content = match.replace(/^\\\`\\\`\\\`\\w*\\n?/, '').replace(/\\n?\\\`\\\`\\\`$/, '');
-      return content;
-    });
+    .replace(/^>\s+/gm, '')
+    // 移除独占一行的分割线
+    .replace(/^[-*_]{3,}\s*$/gm, '')
+    // 处理代码块包裹（保留内容，去掉 ```）
+    .replace(/```(?:\w+)?\n?([\s\S]*?)```/g, '$1');
 
-  // 恢复 <font> 标签
-  return cleaned.replace(/__FONT_(\\d+)__/g, (match, i) => fontTags[parseInt(i)]);
+  // 3. 还原 <font> 标签
+  return cleaned.replace(/@@FONT_(\d+)@@/g, (match, i) => {
+    return fontTags[parseInt(i)] || match;
+  });
 }
 
 /**

@@ -32,12 +32,17 @@ class CoreAgent {
 
     this._sessions = {};
     this._memoryService = null;
+    this._skillService = null;   // 技能服务
     this._scheduler = null;
     this._heartbeat = null;
     this._onCronTaskExecute = null;
     this._mcpTools = [];         // MCP 工具列表（OpenAI function-calling 格式）
     this._mcpToolMap = {};       // toolPrefix → { server, toolName, schema }
     this._mcpService = null;     // MCPorterService 实例
+  }
+
+  setSkill(skillService) {
+    this._skillService = skillService;
   }
 
   setMemory(memoryService) {
@@ -86,7 +91,8 @@ class CoreAgent {
       const profile = all.userProfile || '';
       const habits = all.habits || '';
       const facts = all.facts || '';
-      return `用户偏好：${profile || '无'}\n习惯记录：${habits || '无'}\n事实：${facts || '无'}`;
+      const environment = all.environment || '';
+      return `用户偏好：${profile || '无'}\n习惯记录：${habits || '无'}\n事实：${facts || '无'}\n当前环境状态：${environment || '无'}`;
     } catch {
       return '';
     }
@@ -131,6 +137,28 @@ class CoreAgent {
             name: 'memory_get_habits',
             description: '获取用户习惯记录',
             parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'memory_get_environment',
+            description: '获取当前环境状态（天气、预报、传感器数据）',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'memory_update_environment',
+            description: '更新环境状态信息（用于保存最新的天气或传感器数据）',
+            parameters: {
+              type: 'object',
+              properties: {
+                content: { type: 'string', description: '完整的环境状态 Markdown 内容' },
+              },
+              required: ['content'],
+            },
           },
         },
         {
@@ -258,6 +286,35 @@ class CoreAgent {
       );
     }
 
+    // 技能工具
+    if (this._skillService) {
+      tools.push(
+        {
+          type: 'function',
+          function: {
+            name: 'skill_list',
+            description: '获取当前可用的技能列表',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'skill_run',
+            description: '执行指定的技能',
+            parameters: {
+              type: 'object',
+              properties: {
+                name: { type: 'string', description: '技能名称' },
+                params: { type: 'object', description: '传递给技能的参数（可选）' },
+              },
+              required: ['name'],
+            },
+          },
+        },
+      );
+    }
+
     // MCP 工具
     if (this._mcpTools.length > 0) {
       tools.push(...this._mcpTools);
@@ -280,6 +337,8 @@ class CoreAgent {
       return await this._handleFileTool(toolName, args);
     } else if (toolName.startsWith('cmd_')) {
       return await this._handleCommandTool(toolName, args);
+    } else if (toolName.startsWith('skill_')) {
+      return await this._handleSkillTool(toolName, args);
     }
     return `未知工具: ${toolName}`;
   }
@@ -307,11 +366,36 @@ class CoreAgent {
         case 'memory_update_facts':
           await this._memoryService.updateFacts(args.content);
           return '已更新事实记录';
+        case 'memory_get_environment':
+          return await this._memoryService.loadEnvironment();
+        case 'memory_update_environment':
+          await this._memoryService.updateEnvironment(args.content);
+          return '已更新环境状态';
         default:
           return `未知记忆工具: ${toolName}`;
       }
     } catch (e) {
       return `错误: ${e.message}`;
+    }
+  }
+
+  /**
+   * 处理技能工具调用
+   */
+  async _handleSkillTool(toolName, args = {}) {
+    if (!this._skillService) return '技能服务未配置';
+
+    try {
+      switch (toolName) {
+        case 'skill_list':
+          return await this._skillService.list();
+        case 'skill_run':
+          return await this._skillService.run(args.name, args.params || {}, this);
+        default:
+          return `未知技能工具: ${toolName}`;
+      }
+    } catch (error) {
+      return `执行技能工具失败: ${error.message}`;
     }
   }
 

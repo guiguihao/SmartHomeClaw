@@ -29,6 +29,7 @@ memory:
   user_profile: "USER_PROFILE.md"
   habits: "HABITS.md"
   facts: "FACTS.md"
+  environment: "ENVIRONMENT.md"
 
 # 语言模型配置 
 models:
