@@ -685,6 +685,10 @@ class CoreAgent {
       const result = await this.compressSession(sessionId);
       return { ...result, command: 'compress' };
     }
+    if (trimmed === '/context' || trimmed === '/上下文') {
+      const result = await this.getSessionContext(sessionId, options);
+      return { ...result, command: 'context' };
+    }
 
     if (!this._sessions[sessionId]) {
       this._sessions[sessionId] = await this._loadSession(sessionId);
@@ -707,7 +711,12 @@ class CoreAgent {
     }
 
     const messages = [{ role: 'system', content: systemPrompt }];
-    console.log(`[system] 输入: ${JSON.stringify(messages)}`);
+    
+    // 打印会话上下文日志
+    console.log(`\n[CoreAgent] === Session Context [${sessionId}] ===`);
+    console.log(`[CoreAgent] System Prompt: ${systemPrompt.substring(0, 200)}...`);
+    console.log(`[CoreAgent] History Length: ${trimmedHistory.length} messages`);
+    
     messages.push(...this._normalizeMessages(trimmedHistory));
 
     const tools = this._getAllTools();
@@ -913,28 +922,40 @@ class CoreAgent {
   }
 
   /**
-   * 开启新会话 — 生成新的 sessionId，清空旧会话
-   * @param {string} currentSessionId - 当前会话 ID
+   * 开启新会话 — 备份当前会话，清空历史，保持当前 sessionId
+   * @param {string} sessionId - 当前会话 ID
    * @returns {object} { sessionId, response }
    */
-  async newSession(currentSessionId = 'default') {
-    // 先保存并清除当前会话
-    if (this._sessions[currentSessionId]) {
-      await this._saveSession(currentSessionId, this._sessions[currentSessionId]);
-      this._sessions[currentSessionId] = [];
+  async newSession(sessionId = 'default') {
+    // 1. 加载并备份
+    if (!this._sessions[sessionId]) {
+      this._sessions[sessionId] = await this._loadSession(sessionId);
+    }
+    const history = this._sessions[sessionId];
+
+    if (history && history.length > 0) {
+      const timestamp = new Date().toLocaleString('zh-CN', { 
+        timeZone: 'Asia/Shanghai',
+        hour12: false 
+      }).replace(/[\/ :]/g, '-');
+      
+      const backupPath = path.join(this.sessionDir, `${sessionId}_backup_${timestamp}.json`);
+      try {
+        await fs.writeFile(backupPath, JSON.stringify(history, null, 2), 'utf-8');
+        console.log(`[CoreAgent] Session backed up to: ${backupPath}`);
+      } catch (e) {
+        console.error(`[CoreAgent] 备份会话失败: ${e.message}`);
+      }
     }
 
-    // 生成新 sessionId
-    const newId = `session_${Date.now()}`;
+    // 2. 清空
+    this._sessions[sessionId] = [];
+    await this._saveSession(sessionId, []);
 
-    // 初始化新会话（空历史）
-    this._sessions[newId] = [];
-    await this._saveSession(newId, []);
-
-    console.log(`[CoreAgent] New session created: ${newId}`);
+    console.log(`[CoreAgent] Session cleared: ${sessionId}`);
     return {
-      sessionId: newId,
-      response: '🆕 新会话已开启，历史已清空。',
+      sessionId: sessionId,
+      response: '🆕 会话已重置，原历史已备份。',
     };
   }
 
@@ -998,6 +1019,41 @@ class CoreAgent {
       console.error(`[CoreAgent] Compress failed: ${error.message}`);
       return { response: `❌ 压缩失败: ${error.message}` };
     }
+  }
+
+  /**
+   * 获取会话上下文摘要
+   * @param {string} sessionId - 会话 ID
+   * @param {object} options - 参数
+   * @returns {object} { response }
+   */
+  async getSessionContext(sessionId = 'default', options = {}) {
+    if (!this._sessions[sessionId]) {
+      this._sessions[sessionId] = await this._loadSession(sessionId);
+    }
+    const history = this._sessions[sessionId];
+    
+    const systemPrompt = this._buildSystemPrompt();
+    const memoryCtx = await this._loadMemoryContext();
+    
+    let fullSystem = systemPrompt;
+    if (options.appendSystemPrompt) {
+      fullSystem += `\n\n## 插件上下文\n${options.appendSystemPrompt}`;
+    }
+    if (memoryCtx) {
+      fullSystem += `\n\n## 记忆上下文\n${memoryCtx}`;
+    }
+
+    const historySummary = history.length > 0 
+      ? history.map((msg, i) => `${i+1}. [${msg.role}]: ${msg.content ? msg.content.substring(0, 50) + (msg.content.length > 50 ? '...' : '') : '(工具调用)'}`).join('\n')
+      : '无历史记录';
+
+    const response = `🔍 **会话上下文 [${sessionId}]**\n\n` +
+      `**系统提示词摘要:**\n${systemPrompt.substring(0, 100)}...\n\n` +
+      `**记忆上下文:**\n${memoryCtx || '无'}\n\n` +
+      `**历史消息 (${history.length} 条):**\n${historySummary}`;
+
+    return { response };
   }
 }
 

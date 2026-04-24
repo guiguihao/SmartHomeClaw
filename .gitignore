@@ -30,5 +30,5 @@ npm-debug.log*
 
 # Test coverage
 coverage/
-sessions/
+sessions/*
 tests/

@@ -568,7 +568,7 @@ class FeishuService {
       appendSystemPrompt: FEISHU_SYSTEM_PROMPT,
     });
 
-    // /new 指令：更新 chatId → sessionId 映射
+    // /new 指令：sessionId 现在保持不变（仅备份并重置历史）
     if (result.command === 'new' && result.sessionId) {
       this._chatSessionMap[chatId] = result.sessionId;
     }
@@ -595,6 +595,7 @@ class FeishuService {
         appendSystemPrompt: FEISHU_SYSTEM_PROMPT,
       });
       if (result.command === 'new' && result.sessionId) {
+        // sessionId 现在保持不变，此处更新映射以保持逻辑一致性
         this._chatSessionMap[chatId] = result.sessionId;
       }
       await this.sendCardMessage(chatId, result.reply || result.response || '收到！');
