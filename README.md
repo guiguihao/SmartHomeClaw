@@ -1,144 +1,83 @@
-# SmartHomeClaw - 智能家居 AI Agent
+# SmartHomeClaw Agent
 
-基于 **Qwen Code 无头模式** 驱动的智能家居 AI Agent，具有自主学习和决策能力。
+基于 Node.js 开发的智能家居 AI 管家，由先进的语言模型驱动，具备自主感知、决策、记忆及多端通信能力。
 
-## 特性
+## 🌟 核心特性
 
-- 🤖 **AI 自主决策** - 基于 Qwen Code 无头模式，AI 自主学习和决策
-- 🧠 **持久化记忆** - 自动学习并记录用户习惯，持久化到 `memory/` 目录
-- ⏰ **Cron 定时任务** - 支持基于 Cron 表达式的自动化调度
-- 💓 **心跳机制** - 定期静默自检，保障服务健康运行
-- 🔌 **MCP Server 集成** - 可接入任意兼容 MCP 协议的智能家居服务端
-- 🧩 **插件系统** - 提供标准化的第三方服务扩展接口
+- **🚀 多平台接入**：通过 `MessengerBridge` 实现飞书（Feishu）等平台的无缝集成，支持交互式卡片回复及流式输出。
+- **🧩 技能系统 (Skills)**：支持动态加载 `skills/` 目录下的脚本。
+  - **知识技能**：支持标准 `SKILL.md` 格式（带 YAML 前置参数），让 AI 瞬间学会使用第三方 API。
+- **🧠 长期记忆 (Memory)**：基于本地 Markdown 文件的记忆系统。
+  - **UserProfile**: 记录用户偏好与习惯。
+  - **Facts**: 记录家居设备状态与重要事实。
+  - **Environment**: **自动同步**室外天气、未来预报及传感器上报数据。
+- **💓 智能巡检 (Heartbeat)**：定时执行系统自检、环境数据同步及异常告警推送。
+- **📅 自动化任务 (Cron)**：灵活的定时任务管理，支持 AI 自主添加、删除及开关任务。
+- **🔌 MCP 支持**：完美兼容 Model Context Protocol，可无缝接入各种 MCP Server 扩展能力。
 
-## 架构
+## 📂 目录结构
 
+```text
+.
+├── config/             # 配置文件 (yaml)
+│   ├── agent.yaml      # Agent 基础与模型配置
+│   ├── heartbeat.yaml  # 心跳检查项配置
+│   ├── cron.yaml       # 定时任务持久化
+│   └── plugin.yaml     # 插件/平台参数
+├── mcp/                # MCP Server 目录
+├── memory/             # 长期记忆存储 (Markdown)
+│   ├── USER_PROFILE.md
+│   ├── HABITS.md
+│   ├── FACTS.md
+│   └── ENVIRONMENT.md  # 环境快照记忆
+├── skills/             # 技能库
+│   └── weather/        # 标准 MD 技能示例 (SKILL.md)
+├── src/
+│   ├── agent.js        # 系统入口
+│   ├── services/       # 核心服务 (CoreAgent, Skill, Memory, etc.)
+│   └── plugin/         # 平台适配器 (Feishu, MessengerBridge)
+└── sessions/           # 历史会话备份与去重缓存
 ```
-┌──────────────────────────────────────────────────────┐
-│              Node.js Agent                            │
-│  - 调度中心  - 记忆管理  - 定时任务  - 心跳            │
-└───────────────────────┬──────────────────────────────┘
-                        ▼
-┌──────────────────────────────────────────────────────┐
-│           Qwen Code 无头模式 (AI Brain)               │
-│  qwen --continue -p "现在做什么？" --output-format json│
-└───────────────────────┬──────────────────────────────┘
-                        ▼
-┌──────────────────────────────────────────────────────┐
-│              MCP Server (mcp/ 目录)                   │
-│  - 设备控制  - 状态查询  - 场景触发                   │
-└──────────────────────────────────────────────────────┘
-```
 
-## 快速开始
+## 🛠️ 快速开始
 
 ### 1. 安装依赖
-
 ```bash
 npm install
 ```
 
-### 2. 配置环境变量
+### 2. 配置环境
+复制 `.env.example` 到 `.env` 并填写相关 API Key 和插件密钥：
+- `FEISHU_APP_ID` / `FEISHU_APP_SECRET`
+- `NVIDIA_API_KEY` (或其它 Provider 的 Key)
 
-```bash
-cp .env.example .env
-# 编辑 .env 填入你的配置
-```
-
-### 3. 初始化 MCP Server
-
-```bash
-npm run setup-mcp
-```
+### 3. 配置提示词与模型
+在 `config/agent.yaml` 中修改 `system_prompt` 来定义您的 AI 管家性格。
 
 ### 4. 启动 Agent
-
 ```bash
 npm start
 ```
 
-## 目录结构
+## 💡 常用指令
 
-```
-smarthomeaegnt/
-├── src/
-│   ├── agent.js                 # 主入口
-│   ├── services/
-│   │   ├── qwen-agent.js        # Qwen Code 无头模式封装
-│   │   ├── scheduler.js         # Cron 定时任务
-│   │   ├── heartbeat.js         # 心跳机制
-│   │   └── memory.js            # 记忆管理
-│   └── memory/                  # 记忆服务模块
-├── mcp/                         # MCP Server 目录 (直接放入)
-├── plugin/                      # 插件目录
-├── memory/                      # 记忆存储
-│   ├── USER_PROFILE.md          # 用户偏好
-│   ├── HABITS.md                # 习惯记录
-│   └── FACTS.md                 # 家居信息
-├── config/
-│   ├── agent.yaml               # Agent 基础配置
-│   ├── heartbeat.yaml           # 心跳配置
-│   ├── cron.yaml                # 定时任务配置
-│   └── plugin.yaml              # 插件配置
-├── scripts/
-│   └── setup-mcp.js             # MCP 初始化脚本
-├── tests/
-│   └── test.js                  # 测试脚本
-├── .env.example
-├── package.json
-└── README.md
-```
+### 会话控制指令
+您可以在聊天窗口直接发送以下指令来管理对话：
+- **`/new`** 或 **`/新会话`**：备份并清空当前会话历史，开启全新对话。
+- **`/context`** 或 **`/上下文`**：查看当前会话的统计信息（消息条数）及 AI 自动生成的上下文摘要。
+- **`/compress`** 或 **`/压缩`**：强制对当前冗长的会话进行压缩总结，以节省 Token 并提升响应速度。
 
-## 配置说明
+### AI 技能指令示例
+- “列出你现在的技能”
+- “执行 weather 技能，参数是 city=上海”
+- “创建一个每天早上 8 点提醒我带伞的定时任务”
 
-### config/agent.yaml
+## 📡 智能巡检与环境同步
+系统每隔一段时间会触发 `Heartbeat`。其中“环境同步”任务会自动通过 `wttr.in` 获取天气，并调用 `memory_update_environment` 工具将其存入 `ENVIRONMENT.md`。
 
-Agent 基础配置，包括 Qwen Code 输出格式、MCP 目录等。
+## 🤝 开发与贡献
+1. **添加新服务**: 在 `src/services/` 下实现逻辑，并在 `agent.js` 中注册。
+2. **添加新平台**: 在 `src/plugin/` 下实现适配器，并注册到 `MessengerBridge`。
 
-### config/heartbeat.yaml
-
-心跳机制配置，包括检查间隔和检查项。
-
-### config/cron.yaml
-
-定时任务配置，支持标准 Cron 表达式。
-
-### config/plugin.yaml
-
-插件配置，如飞书、微信等第三方服务。
-
-## 使用 MCP Server
-
-将 MCP Server 放入 `mcp/` 目录，然后运行：
-
-```bash
-npm run setup-mcp
-```
-
-会自动扫描并注册到 `.qwen/settings.json`。
-
-## 开发
-
-### 添加新插件
-
-在 `plugin/` 目录下创建新目录，包含插件代码和配置。
-
-### 添加新 MCP Server
-
-在 `mcp/` 目录下放入 MCP Server 代码。
-
-### 测试
-
-```bash
-npm test
-```
-
-## 依赖
-
-- Node.js >= 18
-- Qwen Code CLI (已安装)
-- 其他依赖见 `package.json`
-
-## 许可证
-
+## 📄 许可证
 MIT
