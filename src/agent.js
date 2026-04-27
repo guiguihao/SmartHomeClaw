@@ -8,6 +8,7 @@ import Heartbeat from './services/heartbeat.js';
 import MemoryService from './services/memory.js';
 import MessengerBridge from './services/messenger.js';
 import SkillService from './services/skill.js';
+import WorkflowService from './services/workflow.js';
 import FeishuService from '../plugin/feishu.js';
 import MCPorterService from '../plugin/mcporter.js';
 
@@ -28,6 +29,7 @@ class SmartHomeAgent {
     this.memory = null;
     this.messenger = null; // 消息桥接器
     this.skill = null;     // 技能服务
+    this.workflow = null;  // 工作流服务
     this.feishu = null;
   }
 
@@ -93,6 +95,15 @@ class SmartHomeAgent {
     if (this.config.plugins?.mcporter?.enabled) {
       this.mcporter = new MCPorterService(this.config.plugins.mcporter, this.agent);
     }
+
+    // 8. 初始化工作流服务
+    this.workflow = new WorkflowService(this.config.workflow || {});
+    await this.workflow.init();
+    this.workflow.setAgent(this.agent);
+    this.workflow.setSkillService(this.skill);
+    // MCPorter 在 start() 阶段才完全就绪，broadcast 也在 start() 后注入
+    this.agent.setWorkflow(this.workflow);
+
     console.log('[Agent] Initialized');
   }
 
@@ -119,6 +130,17 @@ class SmartHomeAgent {
     // 5. 启动 MCPorter 服务
     if (this.mcporter) {
       await this.mcporter.start();
+      // MCPorter 就绪后注入到工作流
+      if (this.workflow) {
+        this.workflow.setMCPService(this.mcporter);
+      }
+    }
+
+    // 6. 注入 broadcast 函数到工作流（飞书就绪后）
+    if (this.workflow && this.messenger) {
+      this.workflow.setBroadcast(async (msg) => {
+        await this.messenger.broadcast(msg);
+      });
     }
 
     console.log('[Agent] SmartHomeClaw is running...');

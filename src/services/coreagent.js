@@ -33,6 +33,7 @@ class CoreAgent {
     this._sessions = {};
     this._memoryService = null;
     this._skillService = null;   // 技能服务
+    this._workflowService = null; // 工作流服务
     this._scheduler = null;
     this._heartbeat = null;
     this._onCronTaskExecute = null;
@@ -43,6 +44,10 @@ class CoreAgent {
 
   setSkill(skillService) {
     this._skillService = skillService;
+  }
+
+  setWorkflow(workflowService) {
+    this._workflowService = workflowService;
   }
 
   setMemory(memoryService) {
@@ -356,6 +361,35 @@ class CoreAgent {
       }
     }
 
+    // 工作流工具
+    if (this._workflowService) {
+      tools.push(
+        {
+          type: 'function',
+          function: {
+            name: 'workflow_list',
+            description: '获取当前可用工作流列表',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'workflow_run',
+            description: '执行指定的工作流（如早晨例行任务、设备巡检等）',
+            parameters: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: '工作流 ID' },
+                context: { type: 'object', description: '初始变量（可选）' },
+              },
+              required: ['id'],
+            },
+          },
+        },
+      );
+    }
+
     // MCP 工具
     if (this._mcpTools.length > 0) {
       tools.push(...this._mcpTools);
@@ -379,6 +413,8 @@ class CoreAgent {
       return this._handleManagementTool(toolName, args);
     } else if (toolName.startsWith('mcp_')) {
       return await this._handleMCPToolCall(toolName, args);
+    } else if (toolName.startsWith('workflow_')) {
+      return await this._handleWorkflowTool(toolName, args);
     } else if (toolName.startsWith('file_')) {
       return await this._handleFileTool(toolName, args);
     } else if (toolName.startsWith('cmd_')) {
@@ -439,6 +475,29 @@ class CoreAgent {
       }
     } catch (e) {
       return `错误: ${e.message}`;
+    }
+  }
+
+  /**
+   * 处理工作流工具调用
+   */
+  async _handleWorkflowTool(toolName, args = {}) {
+    if (!this._workflowService) return '工作流服务未配置';
+    try {
+      switch (toolName) {
+        case 'workflow_list':
+          const list = this._workflowService.list();
+          return JSON.stringify(list, null, 2);
+        case 'workflow_run':
+          const result = await this._workflowService.run(args.id, args.context || {});
+          return result.success
+            ? `工作流 "${args.id}" 执行完成。`
+            : `工作流 "${args.id}" 执行失败：${result.error}`;
+        default:
+          return `未知工作流工具: ${toolName}`;
+      }
+    } catch (e) {
+      return `工作流工具错误: ${e.message}`;
     }
   }
 
