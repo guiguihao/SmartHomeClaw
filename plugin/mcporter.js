@@ -38,9 +38,20 @@ class MCPorterService {
     console.log(`[MCPorter] Config path: ${this.configPath}`);
 
     try {
-      // 1. 创建 runtime — 读取 mcporter.json 配置，连接所有 MCP server
+      // 1. 读取并解析配置文件，支持 ${VAR} 环境变量替换
+      const { promises: fs } = await import('fs');
+      let rawConfig = await fs.readFile(this.configPath, 'utf8');
+      
+      // 匹配 ${VAR_NAME} 格式并替换
+      rawConfig = rawConfig.replace(/\${(\w+)}/g, (match, key) => {
+        return process.env[key] || match;
+      });
+
+      this.config = JSON.parse(rawConfig);
+
+      // 2. 创建 runtime — 传入处理后的 config 对象
       this.runtime = await createRuntime({
-        configPath: this.configPath,
+        config: this.config,
         rootDir: this.rootDir,
       });
 
@@ -56,6 +67,13 @@ class MCPorterService {
       // 3. 逐个 server 连接并发现工具
       for (const serverName of servers) {
         try {
+          // 增加：检查该 Server 是否被禁用
+          const serverConfig = this.config.mcpServers?.[serverName];
+          if (serverConfig && serverConfig.enabled === false) {
+            console.log(`[MCPorter] ${serverName}: Disabled in config, skipping...`);
+            continue;
+          }
+
           const tools = await this.runtime.listTools(serverName);
           console.log(`[MCPorter] ${serverName}: ${tools.length} tool(s) discovered`);
 
@@ -147,7 +165,7 @@ class MCPorterService {
           server,
           toolName,
           args,
-          configPath: this.configPath,
+          config: this.config,
         });
 
         if (fallbackResult && typeof fallbackResult.text === 'function') {

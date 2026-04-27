@@ -1,8 +1,18 @@
 {
   "mcpServers": {
-    "smarthome": {
+    "ureal-mcp": {
+      "enabled": true,
       "command": "/Volumes/sandiskSSD/Project/xuexi/linux_openclaw/.venv/bin/python3",
-      "args": ["/Volumes/sandiskSSD/Project/xuexi/linux_openclaw/zhinengjiaju/smarthome_mcp/server.py"]
+      "args": [
+        "/Volumes/sandiskSSD/Project/xuexi/linux_openclaw/zhinengjiaju/smarthome_mcp/server.py"
+      ]
+    },
+    "xiaodu-mcp": {
+      "enabled": false,
+      "url": "https://xiaodu.baidu.com/dueros_mcp_server/mcp/",
+      "headers": {
+        "ACCESS_TOKEN": "${XIAODU_ACCESS_TOKEN}"
+      }
     }
   }
 }
