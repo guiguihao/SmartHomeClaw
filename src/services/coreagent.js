@@ -393,6 +393,62 @@ class CoreAgent {
             },
           },
         },
+        {
+          type: 'function',
+          function: {
+            name: 'workflow_get',
+            description: '读取指定工作流的完整定义（用于编辑前先查看）',
+            parameters: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: '工作流 ID' },
+              },
+              required: ['id'],
+            },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'workflow_save',
+            description: '创建或更新工作流，持久化到 config/workflows/ 目录下的 YAML 文件。新工作流会创建同名 YAML 文件。',
+            parameters: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: '工作流唯一 ID（英文加下划线）' },
+                name: { type: 'string', description: '工作流显示名称' },
+                steps: {
+                  type: 'array',
+                  description: '步骤列表，每个元素包含 id/type 等字段',
+                  items: { type: 'object' },
+                },
+              },
+              required: ['id', 'steps'],
+            },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'workflow_delete',
+            description: '删除指定工作流，从 YAML 文件中移除对应条目',
+            parameters: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: '要删除的工作流 ID' },
+              },
+              required: ['id'],
+            },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'workflow_reload',
+            description: '重新从磁盘加载工作流配置（手动编辑 YAML 文件后使用）',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
       );
     }
 
@@ -495,10 +551,25 @@ class CoreAgent {
           const list = this._workflowService.list();
           return JSON.stringify(list, null, 2);
         case 'workflow_run':
-          const result = await this._workflowService.run(args.id, args.context || {});
-          return result.success
+          const runResult = await this._workflowService.run(args.id, args.context || {});
+          return runResult.success
             ? `工作流 "${args.id}" 执行完成。`
-            : `工作流 "${args.id}" 执行失败：${result.error}`;
+            : `工作流 "${args.id}" 执行失败：${runResult.error}`;
+        case 'workflow_get':
+          return JSON.stringify(this._workflowService.get(args.id), null, 2);
+        case 'workflow_save':
+          const saveResult = await this._workflowService.save({
+            id: args.id,
+            name: args.name || args.id,
+            steps: args.steps || [],
+          });
+          return `工作流 "${args.id}" 已保存到 ${saveResult.file}。`;
+        case 'workflow_delete':
+          await this._workflowService.delete(args.id);
+          return `工作流 "${args.id}" 已从文件中删除。`;
+        case 'workflow_reload':
+          const reloadResult = await this._workflowService.reload();
+          return `已重新加载，共 ${reloadResult.count} 个工作流。`;
         default:
           return `未知工作流工具: ${toolName}`;
       }

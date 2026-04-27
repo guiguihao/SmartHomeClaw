@@ -69,7 +69,7 @@ class WorkflowService {
             if (this.workflows[wf.id]) {
               console.warn(`[Workflow] Duplicate workflow id "${wf.id}" in ${filename}, overwriting.`);
             }
-            this.workflows[wf.id] = wf;
+            this.workflows[wf.id] = { ...wf, _file: filename };
             totalCount++;
           }
           console.log(`[Workflow] Loaded ${list.length} workflow(s) from ${filename}`);
@@ -91,8 +91,106 @@ class WorkflowService {
     return Object.values(this.workflows).map(w => ({
       id: w.id,
       name: w.name,
+      file: w._file || 'unknown',
       steps: (w.steps || []).length,
     }));
+  }
+
+  /**
+   * 获取单个工作流的完整定义
+   */
+  get(workflowId) {
+    const wf = this.workflows[workflowId];
+    if (!wf) throw new Error(`Workflow "${workflowId}" not found`);
+    // 返回去除内部字段的干净副本
+    const { _file, ...clean } = wf;
+    return clean;
+  }
+
+  /**
+   * 保存工作流到 YAML 文件（创建或更新）
+   * - 如果 workflowId 已存在，更新该 workflow 并写回所在文件
+   * - 如果是新 workflow，写入 {id}.yaml
+   * @param {object} definition - { id, name, steps[] }
+   */
+  async save(definition) {
+    if (!definition?.id) throw new Error('workflow must have an "id" field');
+    if (!Array.isArray(definition.steps)) throw new Error('workflow must have a "steps" array');
+
+    const existing = this.workflows[definition.id];
+    // 确定目标文件
+    const filename = existing?._file || `${definition.id}.yaml`;
+    const filePath = path.join(this.configDir, filename);
+
+    let fileWorkflows = [];
+    // 读取已有文件内容（如有）
+    try {
+      const raw = await fs.readFile(filePath, 'utf8');
+      const parsed = yaml.parse(raw);
+      fileWorkflows = parsed?.workflows || [];
+    } catch (e) {
+      if (e.code !== 'ENOENT') throw e;
+      // 文件不存在，创建新文件
+    }
+
+    // 替换或追加
+    const idx = fileWorkflows.findIndex(w => w.id === definition.id);
+    const { _file, ...cleanDef } = definition; // 去除内部字段
+    if (idx >= 0) {
+      fileWorkflows[idx] = cleanDef;
+    } else {
+      fileWorkflows.push(cleanDef);
+    }
+
+    // 写入文件
+    await fs.mkdir(this.configDir, { recursive: true });
+    const content = yaml.stringify({ workflows: fileWorkflows });
+    await fs.writeFile(filePath, content, 'utf8');
+
+    // 更新内存
+    this.workflows[definition.id] = { ...cleanDef, _file: filename };
+    console.log(`[Workflow] 💾 Saved workflow "${definition.id}" → ${filename}`);
+    return { success: true, file: filename };
+  }
+
+  /**
+   * 删除工作流（从 YAML 文件中移除对应条目）
+   * @param {string} workflowId
+   */
+  async delete(workflowId) {
+    const wf = this.workflows[workflowId];
+    if (!wf) throw new Error(`Workflow "${workflowId}" not found`);
+
+    const filename = wf._file;
+    const filePath = path.join(this.configDir, filename);
+
+    // 读取文件
+    const raw = await fs.readFile(filePath, 'utf8');
+    const parsed = yaml.parse(raw);
+    let fileWorkflows = parsed?.workflows || [];
+
+    fileWorkflows = fileWorkflows.filter(w => w.id !== workflowId);
+
+    // 如果文件空了，删除文件；否则写回
+    if (fileWorkflows.length === 0) {
+      await fs.unlink(filePath);
+      console.log(`[Workflow] 🗑️ Deleted file: ${filename}`);
+    } else {
+      await fs.writeFile(filePath, yaml.stringify({ workflows: fileWorkflows }), 'utf8');
+      console.log(`[Workflow] 🗑️ Removed "${workflowId}" from ${filename}`);
+    }
+
+    delete this.workflows[workflowId];
+    return { success: true };
+  }
+
+  /**
+   * 重新从磁盘加载所有工作流（热重载）
+   */
+  async reload() {
+    this.workflows = {};
+    await this.init();
+    return { success: true, count: Object.keys(this.workflows).length };
   }
 
   /**

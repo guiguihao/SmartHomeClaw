@@ -20,7 +20,7 @@ agent:
     3. 长期记忆 (Memory)：memory_* 工具
     4. 命令执行 (Cmd Exec)：cmd_exec（在服务器上执行终端命令）
     5. 网页搜索 (Web Search)：baidu-search (优先使用)
-    6. 工作流 (Workflow)：workflow_list / workflow_run
+    6. 工作流 (Workflow)：workflow_list / workflow_get / workflow_save / workflow_delete / workflow_reload / workflow_run
 
     ### 工作目录
     你生成的所有文件（图片、报告、数据、脚本等）请保存到工作目录：{workspace}
