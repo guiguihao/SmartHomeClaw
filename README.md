@@ -168,9 +168,29 @@ workflows:
 
 ---
 
-## 📡 智能巡检
+## 📡 智能巡检 (Heartbeat)
 
-`Heartbeat` 定时触发，自动通过 `wttr.in` 获取天气，查询设备状态，更新 `ENVIRONMENT.md` 记忆，并在异常时推送告警到飞书。
+`Heartbeat` 基于独立的 cron 定时器为每个检查项执行轮询，支持全局默认间隔与单项自定义间隔：
+
+```yaml
+# config/heartbeat.yaml
+heartbeat:
+  enabled: true
+  interval: "*/10 * * * *"   # 全局默认：每10分钟
+
+  checks:
+    - name: "环境检查"
+      interval: "*/15 * * * *"   # 单独设置优先级更高：每15分钟
+      prompt: "查询杭州的天气，检查当前智能设备状态数据，并使用 memory_update_environment 更新环境状态记忆。"
+
+    - name: "安全巡检"
+      # 未设置 interval，使用全局 */10 * * * *
+      prompt: "安全检查：门窗、烟雾、燃气等是否正常？"
+```
+
+- 每个 check 的 `interval` 字段**可选**，未设置时使用顶层 `interval`。
+- 发现异常时，AI 在结果中设置 `"is_warning": true`，系统自动推送告警到飞书。
+- 环境同步任务自动通过 `wttr.in` 获取天气，并将结果写入 `ENVIRONMENT.md` 记忆。
 
 ---
 

@@ -3,7 +3,7 @@
 heartbeat:
   enabled: true
   # 检查间隔 (cron 表达式)
-  interval: "*/10 * * * *"  # 每5分钟
+  interval: "*/10 * * * *"  # 每10分钟
   
   # 检查项
   checks:
@@ -20,6 +20,7 @@ heartbeat:
     #   prompt: "安全检查：门窗、烟雾、燃气等是否正常？"
 
     - name: "环境检查" #这个不要删 实用
+      interval: "*/15 * * * *"  # 每5分钟
       prompt: "查询杭州的天气，检查当前智能设备状态数据，并使用 memory_update_environment 更新环境状态记忆。"
 
 # 心跳任务配置结束
