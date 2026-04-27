@@ -8,7 +8,7 @@
 - **🚀 多平台接入**：通过 `MessengerBridge` 实现飞书（Feishu）等平台的无缝集成，支持流式输出与消息去重。
 - **🧩 技能系统 (Skills)**：动态加载 `skills/` 目录下的技能，自动映射为 AI 可直接调用的顶级工具。
   - **知识技能（MD Skill）**：标准 `SKILL.md` 格式（带 YAML 前置参数），AI 读取手册后通过 `cmd_exec` 执行脚本。
-  - **内置技能**：`baidu-search`（百度 AI 搜索）、`weather`（天气查询）。
+  - **内置技能**：`baidu-search`（百度 AI 搜索）、`weather`（天气查询）、`agent-browser`（自动化浏览器）。
 - **🔄 工作流引擎 (Workflow)**：AI 可自主编排、持久化管理工作流，工作流定义保存在 `config/workflows/` 目录下的 YAML 文件中，支持：
   - `decide`：AI 自主决策步骤
   - `skill`：直接调用技能
