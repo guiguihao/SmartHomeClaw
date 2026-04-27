@@ -34,6 +34,7 @@ class CoreAgent {
     this._memoryService = null;
     this._skillService = null;   // 技能服务
     this._workflowService = null; // 工作流服务
+    this._workspace = '';          // 工作目录
     this._scheduler = null;
     this._heartbeat = null;
     this._onCronTaskExecute = null;
@@ -48,6 +49,10 @@ class CoreAgent {
 
   setWorkflow(workflowService) {
     this._workflowService = workflowService;
+  }
+
+  setWorkspace(workspacePath) {
+    this._workspace = workspacePath;
   }
 
   setMemory(memoryService) {
@@ -106,6 +111,7 @@ class CoreAgent {
   _buildSystemPrompt() {
     return this.systemPrompt
       .replace('{name}', this.name)
+      .replace(/{workspace}/g, this._workspace || process.cwd())
       .replace('{time}', new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }));
   }
 
@@ -340,7 +346,7 @@ class CoreAgent {
         for (const skill of skillList) {
           // 避免与内置工具冲突
           if (['skill_list', 'skill_run', 'cmd_exec'].includes(skill.name)) continue;
-          
+
           tools.push({
             type: 'function',
             function: {
@@ -430,7 +436,7 @@ class CoreAgent {
       if (targetSkill) {
         console.log(`[CoreAgent] 动态路由技能工具: ${toolName} -> ${targetSkill.name}`);
         const result = await this._skillService.run(targetSkill.name, args, this);
-        
+
         // 自动脱壳：如果返回的是 {response: '...'} 或 {reply: '...'}，只取内容
         if (result && typeof result === 'object') {
           return result.response || result.reply || JSON.stringify(result);

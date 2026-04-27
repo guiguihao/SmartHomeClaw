@@ -170,7 +170,7 @@ workflows:
 
 ## 📡 智能巡检 (Heartbeat)
 
-`Heartbeat` 基于独立的 cron 定时器为每个检查项执行轮询，支持全局默认间隔与单项自定义间隔：
+`Heartbeat` 每个检查项执行轮询，支持全局默认间隔与单项自定义间隔：
 
 ```yaml
 # config/heartbeat.yaml

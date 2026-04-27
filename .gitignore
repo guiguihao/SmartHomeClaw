@@ -5,6 +5,9 @@ package-lock.json
 # Environment
 .env
 
+# Workspace（AI 生成的文件，不纳入版本控制）
+workspace/
+
 # Storage & Runtime
 sessions/*
 

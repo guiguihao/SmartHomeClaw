@@ -52,6 +52,12 @@ class SmartHomeAgent {
     this.agent.setMemory(this.memory);
     await this.agent.init();
 
+    // 设置工作目录
+    const workspaceDir = path.resolve(process.cwd(), this.config.agent?.workspace || './workspace');
+    await fs.mkdir(workspaceDir, { recursive: true });
+    this.agent.setWorkspace(workspaceDir);
+    console.log(`[Agent] Workspace: ${workspaceDir}`);
+
     // 4. 初始化技能服务
     this.skill = new SkillService(this.config.agent?.skills);
     await this.skill.init();
