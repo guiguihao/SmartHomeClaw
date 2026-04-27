@@ -4,7 +4,7 @@
 
 ## 🌟 核心特性
 
-- **🔌 内置 MCP 支持**：内置悠瑞智能家居 MCP、小度 DuerOS MCP，可无缝扩展任意 MCP Server。支持每个 Server 独立启用/禁用，配置文件支持 `${ENV_VAR}` 环境变量引用。
+- **🔌 内置 MCP 支持**：内置悠瑞智能家居 MCP、小度 DuerOS MCP，米家MCP,可无缝扩展任意 MCP Server。支持每个 Server 独立启用/禁用，配置文件支持 `${ENV_VAR}` 环境变量引用。
 - **🚀 多平台接入**：通过 `MessengerBridge` 实现飞书（Feishu）等平台的无缝集成，支持流式输出与消息去重。
 - **🧩 技能系统 (Skills)**：动态加载 `skills/` 目录下的技能，自动映射为 AI 可直接调用的顶级工具。
   - **知识技能（MD Skill）**：标准 `SKILL.md` 格式（带 YAML 前置参数），AI 读取手册后通过 `cmd_exec` 执行脚本。
