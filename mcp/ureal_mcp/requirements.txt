@@ -1,0 +1,5 @@
+mcp
+pydantic>=2.0
+httpx
+paho-mqtt
+python-dotenv

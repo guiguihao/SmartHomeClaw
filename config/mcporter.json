@@ -2,10 +2,20 @@
   "mcpServers": {
     "ureal-mcp": {
       "enabled": true,
-      "command": "/Volumes/sandiskSSD/Project/xuexi/linux_openclaw/.venv/bin/python3",
+      "command": "python3",
       "args": [
-        "/Volumes/sandiskSSD/Project/xuexi/linux_openclaw/zhinengjiaju/smarthome_mcp/server.py"
+        "../mcp/ureal_mcp/server.py"
       ]
+    },
+    "miot-mcp": {
+      "enabled": false,
+      "command": "python3",
+      "args": [
+        "../mcp/miot-mcp/mcp_server/mcp_server.py"
+      ],
+      "env": {
+        "MIJIA_LOG_LEVEL": "INFO"
+      }
     },
     "xiaodu-mcp": {
       "enabled": false,
