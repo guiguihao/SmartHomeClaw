@@ -328,6 +328,7 @@ class FeishuService {
 
     // chatId → sessionId 映射（支持 /new 切换新会话）
     this._chatSessionMap = {};
+    this.sessionFilePath = path.join(process.cwd(), 'sessions', 'feishu_sessions.json');
 
     // 消息去重：避免飞书重复投递相同消息
     this._processedMessageMap = new Map(); // key: `${chatId}_${messageId}` → 处理时间戳
@@ -360,7 +361,8 @@ class FeishuService {
     console.log('[Feishu] Starting...');
 
     try {
-      // 0. 加载本地去重缓存
+      // 0. 加载本地会话和去重缓存
+      await this._loadSessions();
       await this._loadDedupCache();
 
       // 确保之前没有启动
@@ -491,6 +493,42 @@ class FeishuService {
       }
     }, 2000); // 2秒防抖
   }
+  
+  /**
+   * 从本地加载会话映射
+   */
+  async _loadSessions() {
+    try {
+      if (fs.existsSync(this.sessionFilePath)) {
+        const data = fs.readFileSync(this.sessionFilePath, 'utf8');
+        const obj = JSON.parse(data);
+        this._chatSessionMap = obj;
+        console.log(`[Feishu] Loaded ${Object.keys(obj).length} sessions from local cache`);
+        
+        // 如果没有配置通知群，且缓存中有会话，则尝试恢复最后一个会话作为通知渠道
+        if (!this.notificationChatId && Object.keys(obj).length > 0) {
+          const lastChatId = Object.keys(obj)[Object.keys(obj).length - 1];
+          this.notificationChatId = lastChatId;
+          console.log(`[Feishu] Restored notification_chat_id from cache: ${this.notificationChatId}`);
+        }
+      }
+    } catch (error) {
+      console.warn('[Feishu] Failed to load session cache:', error.message);
+    }
+  }
+
+  /**
+   * 保存会话映射到本地
+   */
+  _saveSessions() {
+    try {
+      const dir = path.dirname(this.sessionFilePath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(this.sessionFilePath, JSON.stringify(this._chatSessionMap, null, 2), 'utf8');
+    } catch (error) {
+      console.warn('[Feishu] Failed to save session cache:', error.message);
+    }
+  }
 
   /**
    * 检查消息是否已处理过
@@ -614,6 +652,13 @@ class FeishuService {
   _getSessionId(chatId) {
     if (!this._chatSessionMap[chatId]) {
       this._chatSessionMap[chatId] = 'feishu_' + chatId;
+      this._saveSessions(); // 发现新会话，持久化
+      
+      // 如果之前没有通知渠道，自动将第一个发现的会话设为通知渠道
+      if (!this.notificationChatId) {
+        this.notificationChatId = chatId;
+        console.log(`[Feishu] Automatically set notification_chat_id to: ${chatId}`);
+      }
     }
     return this._chatSessionMap[chatId];
   }
