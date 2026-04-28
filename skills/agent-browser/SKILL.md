@@ -101,6 +101,9 @@ agent-browser session list
 # Or via env: AGENT_BROWSER_SESSION=admin agent-browser ...
 ```
 
+> [!NOTE]
+> **Default Persistence**: This agent is configured to use a persistent profile directory at `./workspace/browser-profile` by default via `agent-browser.json`. Cookies and login states are automatically saved and restored across commands.
+
 ### State Persistence
 ```bash
 agent-browser state save auth.json        # Save cookies/storage
