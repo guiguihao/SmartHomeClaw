@@ -73,7 +73,7 @@
 ### 1. 安装依赖
 ```bash
 npm install
-pip install python-dotenv requests  # 技能脚本依赖
+pip install -r requirements.txt  # 技能脚本依赖内置mcp依赖
 ```
 
 ### 2. 配置环境变量

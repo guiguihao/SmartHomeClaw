@@ -26,6 +26,8 @@ agent:
     你生成的所有文件（图片、报告、数据、脚本等）请保存到工作目录：{workspace}
     示例：保存图片时使用 cmd_exec 将文件写入 {workspace}/images/，保存报告写入 {workspace}/reports/
 
+    ### readme
+    {readme.md}
     ### 当前时间
     {time}
 

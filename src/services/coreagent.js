@@ -108,10 +108,19 @@ class CoreAgent {
     }
   }
 
-  _buildSystemPrompt() {
+  async _buildSystemPrompt() {
+    let readmeContent = '';
+    try {
+      const readmePath = path.resolve(process.cwd(), 'README.md');
+      readmeContent = await fs.readFile(readmePath, 'utf8');
+    } catch (e) {
+      console.warn('[CoreAgent] Failed to load README.md for system prompt');
+    }
+
     return this.systemPrompt
       .replace('{name}', this.name)
       .replace(/{workspace}/g, this._workspace || process.cwd())
+      .replace('{readme.md}', readmeContent)
       .replace('{time}', new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }));
   }
 
@@ -972,7 +981,7 @@ class CoreAgent {
     this._sessions[sessionId] = this._trimHistory(history, maxLen);
     const trimmedHistory = this._sessions[sessionId];
 
-    let systemPrompt = this._buildSystemPrompt();
+    let systemPrompt = await this._buildSystemPrompt();
     let ctx = await this._loadMemoryContext();
     if (options.appendSystemPrompt) {
       ctx = ctx ? `${ctx}\n${options.appendSystemPrompt}` : options.appendSystemPrompt;
@@ -1305,7 +1314,7 @@ class CoreAgent {
     }
     const history = this._sessions[sessionId];
 
-    const systemPrompt = this._buildSystemPrompt();
+    const systemPrompt = await this._buildSystemPrompt();
     const memoryCtx = await this._loadMemoryContext();
 
     let fullSystem = systemPrompt;
